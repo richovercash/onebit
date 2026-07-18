@@ -29,3 +29,5 @@ local.properties
 
 # scratch
 *.log
+bench/noir-rs/
+bench/android-ndk-r27c/
