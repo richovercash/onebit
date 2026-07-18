@@ -13,3 +13,8 @@ java {
 }
 tasks.withType(JavaCompile).configureEach { options.release = 11 }
 tasks.named('compileTestJava') { options.release = 17 } // tests are JVM-only
+
+tasks.register('sodSizes', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.SodSizes'
+}

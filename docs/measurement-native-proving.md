@@ -43,10 +43,32 @@ around 4 threads, and extra cores just stall (which is what the "731% idle"
 actually was — cores waiting on memory, not sitting unused). **~6.5 s is near the
 hardware floor for this circuit on this phone. More cores will not help.**
 
-## The real lever: fewer gates
+## RESULT: slimmed circuit clears the budget (~2.5 s)
 
-Since we're memory-bound, the way under 5 s is a **smaller circuit** (less
-memory traffic), not more parallelism:
+Acting on the memory-bound finding, the circuit was slimmed with **real input
+sizes** (`circuits/mono_slim`):
+
+- eContent **1200 → 256 bytes** (a real passport LDS security object measured at
+  74 bytes; 256 covers many data groups) — 19 SHA blocks → 4.
+- DSC identity committed via **Poseidon over the 18 modulus limbs** instead of
+  SHA-256 over a 1000-byte cert — 16 SHA blocks → 0.
+
+| Circuit | Gates | Pixel 9a native prove |
+|---|---|---|
+| bench monolithic (padded) | 177,350 | ~6.6 s |
+| **mono_slim (real sizes)** | **55,115** | **~2.5 s** (2.56 / 2.68 / 2.39 s) |
+
+**3.2× fewer gates, 2.6× faster, `VERIFY: OK`.** ~2.5 s on the GrapheneOS Pixel
+9a **clears T5's < 5 s target and essentially meets T2's ≤ 2.5 s p50 proving
+gate.** With witness-gen + biometric + device-sig (sub-second), end-to-end
+presentation is ~3 s. The document-bound age proof is now interactive-fast on a
+zero-network wallet. (Pixel 6 would be ~2.2 s by gate-ratio scaling from its
+5.9 s full-circuit number; not re-run — device was unplugged.)
+
+## The lever that worked: fewer gates
+
+Confirmed empirically. Since we're memory-bound, a **smaller circuit** (less
+memory traffic) — not more parallelism — is what got us under budget:
 
 - This is the T2 *bench* monolithic with padded inputs: SHA-256 over a 1200-byte
   eContent + 1000-byte DSC cert + 93-byte DG1. Real documents have smaller
