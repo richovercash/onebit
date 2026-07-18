@@ -1,0 +1,12 @@
+[package]
+name = "bench_native"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+noir = { path = "../noir", features = ["barretenberg"] }
+serde_json = "1.0"
+
+[[bin]]
+name = "bench_native"
+path = "src/main.rs"

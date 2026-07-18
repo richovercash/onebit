@@ -13,6 +13,9 @@ bench/zkpassport-circuits/
 bench/longfellow-zk/
 bench/noir/*/target/
 bench/noir/crs/
+bench/build-native/platform-libs/
+bench/build-native/*.o
+bench/*.dat
 
 # local config / secrets
 local.properties

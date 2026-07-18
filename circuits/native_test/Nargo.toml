@@ -1,0 +1,4 @@
+[package]
+name = "native_test"
+type = "bin"
+authors = ["onebit"]
