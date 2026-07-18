@@ -4,34 +4,44 @@
 import { Barretenberg, UltraHonkBackend, BackendType } from '/zk/bb/index.js';
 import { Noir } from '/zk/noir_js/index.mjs';
 
+const params = new URLSearchParams(location.search);
+const circuitFile = params.get('c') || 'circuit_p_v1.json';
+const inputsFile  = params.get('i') || 'bench_p_inputs.json';
+const label       = params.get('l') || circuitFile;
+
 async function run() {
+  // Threading diagnostics — this is why v1 fell back to single-threaded.
+  const diag = {
+    label,
+    crossOriginIsolated: (typeof crossOriginIsolated !== 'undefined') ? crossOriginIsolated : 'undef',
+    sharedArrayBuffer: (typeof SharedArrayBuffer !== 'undefined'),
+    hardwareConcurrency: navigator.hardwareConcurrency,
+  };
+  Android.onReady(JSON.stringify(diag));
+
   const t0 = Date.now();
-  const circuit = await (await fetch('/zk/circuit_p_v1.json')).json();
-  const inputs = await (await fetch('/zk/bench_p_inputs.json')).json();
+  const circuit = await (await fetch('/zk/' + circuitFile)).json();
+  const inputs = await (await fetch('/zk/' + inputsFile)).json();
   const noir = new Noir(circuit);
-  const type = (typeof SharedArrayBuffer !== 'undefined')
-      ? BackendType.WasmWorker : BackendType.Wasm;
-  const api = await Barretenberg.new({ backend: type, threads: 4 });
+  const useThreads = diag.sharedArrayBuffer;
+  const type = useThreads ? BackendType.WasmWorker : BackendType.Wasm;
+  const threads = useThreads ? Math.min(8, diag.hardwareConcurrency || 4) : 1;
+  const api = await Barretenberg.new({ backend: type, threads });
   const backend = new UltraHonkBackend(circuit.bytecode, api);
-  Android.onReady('warmup ' + (Date.now() - t0) + 'ms, backend ' + type);
+  Android.onProgress('warmup ' + (Date.now() - t0) + 'ms, backend ' + type + ', threads ' + threads);
 
   const times = [];
-  let lastPub = null;
   for (let i = 0; i < 3; i++) {
     const w0 = Date.now();
     const { witness } = await noir.execute(inputs);
     const p0 = Date.now();
-    const { proof, publicInputs } = await backend.generateProof(witness);
-    const done = Date.now();
-    lastPub = publicInputs;
-    times.push({ run: i, witness_ms: p0 - w0, prove_ms: done - p0, total_ms: done - w0 });
-    Android.onProgress(JSON.stringify(times[i]));
+    await backend.generateProof(witness);
+    times.push(Date.now() - p0);
+    Android.onProgress('run ' + i + ': prove ' + times[i] + 'ms (witness ' + (p0 - w0) + 'ms)');
   }
-  const proveMs = times.map(t => t.prove_ms).sort((a, b) => a - b);
-  Android.onProof(JSON.stringify({
-    backend: type, warmup_ms: 0,
-    prove_p50_ms: proveMs[1], runs: times, nullifier: lastPub ? lastPub[lastPub.length - 1] : null,
-  }));
+  const sorted = [...times].sort((a, b) => a - b);
+  Android.onProof(JSON.stringify({ label, backend: type, threads,
+    prove_p50_ms: sorted[1], runs: times }));
 }
 run().catch(e => Android.onError(String((e && e.stack) || e)));
 </script>

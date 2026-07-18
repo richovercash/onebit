@@ -80,18 +80,10 @@ public class MainActivity extends Activity {
         attest.setOnClickListener(v -> Attest.run(this, "demo-verifier-01", this::say));
         root.addView(attest);
 
-        android.widget.Button bench = new android.widget.Button(this);
-        bench.setText("Benchmark Circuit P v1 (recursion)");
-        bench.setOnClickListener(v -> {
-            say("Loading recursive prover…");
-            new ZkProver(this, new ZkProver.Callback() {
-                public void onReady(String t) { say("Prover ready: " + t + "\nProving 3×…"); }
-                public void onProgress(String l) { say("run: " + l); }
-                public void onProof(String r) { say("BENCH RESULT\n" + r); }
-                public void onError(String m) { say("BENCH FAIL: " + m); }
-            }, "https://onebit.zk/zk/bench.html");
-        });
-        root.addView(bench);
+        addBench(root, "Benchmark: recursion (Circuit P v1, 775k)",
+                "c=circuit_p_v1.json&i=bench_p_inputs.json&l=recursion-775k");
+        addBench(root, "Benchmark: monolithic (Option A, 177k)",
+                "c=circuit_mono.json&i=mono_inputs.json&l=monolithic-177k");
 
         status = new TextView(this);
         status.setTextIsSelectable(true);
@@ -126,6 +118,24 @@ public class MainActivity extends Activity {
     protected void onNewIntent(android.content.Intent intent) {
         super.onNewIntent(intent);
         handleDeepLink(intent);
+    }
+
+    private final StringBuilder benchLog = new StringBuilder();
+
+    private void addBench(LinearLayout root, String label, String query) {
+        android.widget.Button b = new android.widget.Button(this);
+        b.setText(label);
+        b.setOnClickListener(v -> {
+            benchLog.setLength(0);
+            say("Loading prover for " + label + "…");
+            new ZkProver(this, new ZkProver.Callback() {
+                public void onReady(String t) { benchLog.append("diag: ").append(t).append('\n'); say(benchLog.toString()); }
+                public void onProgress(String l) { benchLog.append(l).append('\n'); say(benchLog.toString()); }
+                public void onProof(String r) { benchLog.append("RESULT ").append(r); say(benchLog.toString()); }
+                public void onError(String m) { say(benchLog + "\nFAIL: " + m); }
+            }, "https://onebit.zk/zk/bench.html?" + query);
+        });
+        root.addView(b);
     }
 
     /** Persist credential attributes (SPEC §3.1.5).
