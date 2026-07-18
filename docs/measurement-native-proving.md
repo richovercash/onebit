@@ -5,14 +5,39 @@ proof viable at interactive speed on a zero-network wallet.*
 
 ## Headline
 
-| Presentation proof (monolithic, 177k gates) | Pixel 6 Pro |
-|---|---|
-| WASM in WebView, single-threaded (prior) | ~29 s |
-| **Native (barretenberg via noir-rs, JNI-less binary)** | **~5.9 s** |
+| Presentation proof (monolithic, 177k gates) | Pixel 6 Pro | Pixel 9a (GrapheneOS) |
+|---|---|---|
+| WASM in WebView, single-threaded (prior) | ~29 s | — |
+| **Native (barretenberg via noir-rs, JNI-less binary)** | **~5.9 s** | **~6.6 s** |
 
-Three consecutive runs: 5.94 s, 5.88 s, 6.02 s. `VERIFY: OK`. **~5× faster than
-WASM**, and this is the *slower* of the two phones. The <5 s budget is now in
-reach — likely already met on the Pixel 9a (newer Tensor, pending its number).
+P6: 5.94 / 5.88 / 6.02 s. P9a: 6.53 / 6.59 / 7.41 / 6.57 / 6.78 s. `VERIFY: OK`
+on both. **~5× faster than WASM.**
+
+Honest read against the budgets:
+- **Passes T2's ≤6 s p95 gate** for proving.
+- **Misses T2's ≤2.5 s p50 gate** and T5's <5 s end-to-end target by ~1–2 s.
+- Surprise: the newer Pixel 9a is *slightly slower* than the Pixel 6 here.
+  Likely GrapheneOS CPU governor / thermal (the 9a had just run passport +
+  attestation + prior benches) or the 9a's efficiency-core-heavy Tensor G4
+  layout. Not chased down.
+
+So native proving did **not** get us cleanly under 5 s, but it moved the
+document-bound proof from "impossible in a zero-network WebView (29–93 s)" to
+"~6 s and within ~1–2 s of target." The remaining gap is an optimization
+problem, not a viability one.
+
+## Headroom still on the table (not yet exhausted)
+
+- **Thread utilization unconfirmed.** A CPU sample during a run showed high idle
+  (~731% of 800%), hinting the prover may not be saturating all 8 cores. If it's
+  running ~2–4 effective cores, forcing full parallelism could roughly halve the
+  time → possibly under 5 s. barretenberg's native thread pool sizing (env var /
+  hardware_concurrency) is the next lever to check.
+- **`low_memory_mode` was OFF** (the fast path) — correct for speed.
+- **Leaner circuit.** This is the T2 *bench* monolithic; the production circuit
+  may drop in-circuit work (e.g. move Merkle-root equality out) and shed gates.
+- **Precomputed vk.** The ~2–3 s vk step is one-time; it does not count toward
+  per-presentation time (only the ~6 s prove does).
 
 ## How it was measured
 
