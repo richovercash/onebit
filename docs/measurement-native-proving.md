@@ -26,18 +26,40 @@ document-bound proof from "impossible in a zero-network WebView (29–93 s)" to
 "~6 s and within ~1–2 s of target." The remaining gap is an optimization
 problem, not a viability one.
 
-## Headroom still on the table (not yet exhausted)
+## Threading is NOT the lever — it's memory-bandwidth-bound (measured)
 
-- **Thread utilization unconfirmed.** A CPU sample during a run showed high idle
-  (~731% of 800%), hinting the prover may not be saturating all 8 cores. If it's
-  running ~2–4 effective cores, forcing full parallelism could roughly halve the
-  time → possibly under 5 s. barretenberg's native thread pool sizing (env var /
-  hardware_concurrency) is the next lever to check.
+The earlier "high idle → maybe under-threaded" guess was **wrong**. Forcing the
+thread count via `HARDWARE_CONCURRENCY` on the Pixel 9a settles it:
+
+| Threads | Prove time |
+|---|---|
+| 1 | ~9.5 s |
+| 4 | ~6.5 s |
+| 8 | ~6.5 s |
+
+1→4 threads buys only 1.46× (not 4×), and **4→8 buys nothing**. That plateau is
+the signature of a memory-bandwidth ceiling: the MSM/FFT work saturates memory
+around 4 threads, and extra cores just stall (which is what the "731% idle"
+actually was — cores waiting on memory, not sitting unused). **~6.5 s is near the
+hardware floor for this circuit on this phone. More cores will not help.**
+
+## The real lever: fewer gates
+
+Since we're memory-bound, the way under 5 s is a **smaller circuit** (less
+memory traffic), not more parallelism:
+
+- This is the T2 *bench* monolithic with padded inputs: SHA-256 over a 1200-byte
+  eContent + 1000-byte DSC cert + 93-byte DG1. Real documents have smaller
+  eContent/DSC → fewer SHA blocks → fewer gates.
+- Hashing the full 1000-byte DSC cert in-circuit is a candidate to cut (commit
+  the DSC identity more cheaply).
+- The RSA-2048 verify (~150k of the 177k gates) dominates; a leaner RSA gadget
+  or the ECDSA document population (cheaper) would drop it a lot.
+
+Other levers that don't change the memory-bound story:
 - **`low_memory_mode` was OFF** (the fast path) — correct for speed.
-- **Leaner circuit.** This is the T2 *bench* monolithic; the production circuit
-  may drop in-circuit work (e.g. move Merkle-root equality out) and shed gates.
-- **Precomputed vk.** The ~2–3 s vk step is one-time; it does not count toward
-  per-presentation time (only the ~6 s prove does).
+- **Precomputed vk.** The ~2–3 s vk step is one-time and does not count toward
+  per-presentation time (only the ~6.5 s prove does).
 
 ## How it was measured
 
