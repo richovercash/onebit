@@ -192,8 +192,11 @@ final class Present {
                 .toString();
     }
 
+    // noir-rs proof: [uint32 num_public][public_inputs][proof]. Public input
+    // `index` lives at 4 + index*32.
     private static String fieldHex(byte[] flat, int index) {
-        BigInteger v = new BigInteger(1, java.util.Arrays.copyOfRange(flat, index * 32, index * 32 + 32));
+        int off = 4 + index * 32;
+        BigInteger v = new BigInteger(1, java.util.Arrays.copyOfRange(flat, off, off + 32));
         return v.toString();
     }
 

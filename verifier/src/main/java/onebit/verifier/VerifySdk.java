@@ -58,10 +58,12 @@ public final class VerifySdk {
                 if (!allowed) throw new IllegalStateException("ZK proof is a stub and policy forbids stubs");
                 v.zkStub = true;
             } else {
+                // noir-rs format: [uint32 num_public][public_inputs][proof].
+                final int PRE = 4;
                 java.math.BigInteger[] pub = new java.math.BigInteger[5];
                 for (int i = 0; i < 5; i++) {
                     pub[i] = new java.math.BigInteger(1,
-                            java.util.Arrays.copyOfRange(proofBytes, i * 32, i * 32 + 32));
+                            java.util.Arrays.copyOfRange(proofBytes, PRE + i * 32, PRE + i * 32 + 32));
                 }
                 if (!pub[0].equals(new java.math.BigInteger(expectedCtx))) {
                     throw new IllegalStateException("zk ctx != H(verifier_id||epoch)");
@@ -117,14 +119,14 @@ public final class VerifySdk {
     /** Verify mono_slim proof: split [public_inputs(5*32)][proof], hand to the
      *  bb.js sidecar as {proof, publicInputs}. */
     static boolean zkVerify(byte[] proofBytes) throws Exception {
-        int pub = 5;
+        int pub = 5, PRE = 4; // [uint32 num_public][pub][proof]
         com.google.gson.JsonArray publicInputs = new com.google.gson.JsonArray();
         for (int i = 0; i < pub; i++) {
             String hex = java.util.HexFormat.of().formatHex(
-                    java.util.Arrays.copyOfRange(proofBytes, i * 32, i * 32 + 32));
+                    java.util.Arrays.copyOfRange(proofBytes, PRE + i * 32, PRE + i * 32 + 32));
             publicInputs.add("0x" + hex);
         }
-        byte[] proof = java.util.Arrays.copyOfRange(proofBytes, pub * 32, proofBytes.length);
+        byte[] proof = java.util.Arrays.copyOfRange(proofBytes, PRE + pub * 32, proofBytes.length);
         JsonObject in = new JsonObject();
         in.addProperty("proof", Base64.getEncoder().encodeToString(proof));
         in.add("publicInputs", publicInputs);
