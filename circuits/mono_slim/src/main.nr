@@ -20,7 +20,7 @@ fn main(
     merkle_path: [Field; 20],
     merkle_dirs: u32,
     k: Field,
-    ctx: Field,
+    ctx: pub Field,   // H(verifier_id || epoch) -- verifier recomputes + binds N
     current: pub u32,
     age_min: pub u32,
 ) -> pub (Field, Field) { // (N, dsc_root)

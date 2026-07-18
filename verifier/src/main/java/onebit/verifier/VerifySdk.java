@@ -47,35 +47,41 @@ public final class VerifySdk {
             String expectedCtx = Nullifier.ctx(c.verifierId, c.epoch).toString();
             if (!expectedCtx.equals(pi.get("ctx").getAsString())) throw new IllegalStateException("ctx mismatch");
 
-            // 2. ZK proof: semantic checks on public inputs, then cryptographic
-            //    verification via the bb.js sidecar. Public-input layout of
-            //    Circuit P v0: [ctx, current, age_min, N].
-            byte[] proof = Base64.getDecoder().decode(r.get("proof").getAsString());
-            String proofStr = new String(proof, StandardCharsets.UTF_8);
+            // 2. ZK proof (mono_slim, native). proofBytes = [public_inputs
+            //    (5*32B)][proof]; public inputs = [ctx, current, age_min, N,
+            //    dsc_root]. Semantic checks against OUR challenge, then bb.js.
+            byte[] proofBytes = Base64.getDecoder().decode(r.get("proof").getAsString());
+            String proofStr = new String(proofBytes, 0, Math.min(4, proofBytes.length), StandardCharsets.UTF_8);
             if (proofStr.startsWith("STUB")) {
                 boolean allowed = allowlist.has("demo_allow_zk_stub")
                         && allowlist.get("demo_allow_zk_stub").getAsBoolean();
                 if (!allowed) throw new IllegalStateException("ZK proof is a stub and policy forbids stubs");
                 v.zkStub = true;
             } else {
-                var zk = pi.getAsJsonArray("zk");
-                if (zk == null || zk.size() != 4) throw new IllegalStateException("bad zk public inputs");
-                if (!hexEq(zk.get(0).getAsString(), new java.math.BigInteger(expectedCtx))) {
+                java.math.BigInteger[] pub = new java.math.BigInteger[5];
+                for (int i = 0; i < 5; i++) {
+                    pub[i] = new java.math.BigInteger(1,
+                            java.util.Arrays.copyOfRange(proofBytes, i * 32, i * 32 + 32));
+                }
+                if (!pub[0].equals(new java.math.BigInteger(expectedCtx))) {
                     throw new IllegalStateException("zk ctx != H(verifier_id||epoch)");
                 }
                 java.time.LocalDate today = java.time.LocalDate.now();
-                long current = new java.math.BigInteger(zk.get(1).getAsString().substring(2), 16).longValueExact();
                 long todayInt = today.getYear() * 10000L + today.getMonthValue() * 100L + today.getDayOfMonth();
-                if (Math.abs(current - todayInt) > 1) throw new IllegalStateException("zk current-date stale: " + current);
-                long ageMin = new java.math.BigInteger(zk.get(2).getAsString().substring(2), 16).longValueExact();
-                if (ageMin != c.value) throw new IllegalStateException("zk age_min != policy value");
-                if (!zk.get(3).getAsString().equals(pi.get("N").getAsString())) {
+                if (Math.abs(pub[1].longValueExact() - todayInt) > 1) {
+                    throw new IllegalStateException("zk current-date stale: " + pub[1]);
+                }
+                if (pub[2].longValueExact() != c.value) {
+                    throw new IllegalStateException("zk age_min != policy value");
+                }
+                if (!pub[3].toString().equals(pi.get("N").getAsString())) {
                     throw new IllegalStateException("N != zk output");
                 }
-                if (!zkVerify(r.get("proof").getAsString(), zk)) {
+                if (!zkVerify(proofBytes)) {
                     throw new IllegalStateException("ZK proof invalid");
                 }
             }
+            byte[] proof = proofBytes;
 
             // 3. Attestation chain to allowlist (attestation binds first-contact
             //    nonce, not this presentation's — freshness comes from device_sig).
@@ -108,14 +114,19 @@ public final class VerifySdk {
         return v;
     }
 
-    static boolean hexEq(String hex0x, java.math.BigInteger dec) {
-        return new java.math.BigInteger(hex0x.substring(2), 16).equals(dec);
-    }
-
-    /** Cryptographic UltraHonk verification via the node bb.js sidecar. */
-    static boolean zkVerify(String proofB64, com.google.gson.JsonArray publicInputs) throws Exception {
+    /** Verify mono_slim proof: split [public_inputs(5*32)][proof], hand to the
+     *  bb.js sidecar as {proof, publicInputs}. */
+    static boolean zkVerify(byte[] proofBytes) throws Exception {
+        int pub = 5;
+        com.google.gson.JsonArray publicInputs = new com.google.gson.JsonArray();
+        for (int i = 0; i < pub; i++) {
+            String hex = java.util.HexFormat.of().formatHex(
+                    java.util.Arrays.copyOfRange(proofBytes, i * 32, i * 32 + 32));
+            publicInputs.add("0x" + hex);
+        }
+        byte[] proof = java.util.Arrays.copyOfRange(proofBytes, pub * 32, proofBytes.length);
         JsonObject in = new JsonObject();
-        in.addProperty("proof", proofB64);
+        in.addProperty("proof", Base64.getEncoder().encodeToString(proof));
         in.add("publicInputs", publicInputs);
         String jsDir = System.getProperty("onebit.jsdir",
                 new java.io.File("verifier/js").getAbsolutePath());
