@@ -80,6 +80,19 @@ public class MainActivity extends Activity {
         attest.setOnClickListener(v -> Attest.run(this, "demo-verifier-01", this::say));
         root.addView(attest);
 
+        android.widget.Button bench = new android.widget.Button(this);
+        bench.setText("Benchmark Circuit P v1 (recursion)");
+        bench.setOnClickListener(v -> {
+            say("Loading recursive prover…");
+            new ZkProver(this, new ZkProver.Callback() {
+                public void onReady(String t) { say("Prover ready: " + t + "\nProving 3×…"); }
+                public void onProgress(String l) { say("run: " + l); }
+                public void onProof(String r) { say("BENCH RESULT\n" + r); }
+                public void onError(String m) { say("BENCH FAIL: " + m); }
+            }, "https://onebit.zk/zk/bench.html");
+        });
+        root.addView(bench);
+
         status = new TextView(this);
         status.setTextIsSelectable(true);
         status.setText("Fill MRZ fields, then hold document to the phone.");

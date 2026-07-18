@@ -25,17 +25,23 @@ final class ZkProver {
         void onReady(String backendType);
         void onProof(String resultJson); // {ms, proof: b64, publicInputs: [hex]}
         void onError(String message);
+        default void onProgress(String line) {}
     }
 
     private final WebView web;
 
     ZkProver(Activity a, Callback cb) {
+        this(a, cb, "https://onebit.zk/zk/prove.html");
+    }
+
+    ZkProver(Activity a, Callback cb, String pageUrl) {
         web = new WebView(a);
         web.getSettings().setJavaScriptEnabled(true);
         web.addJavascriptInterface(new Object() {
             @JavascriptInterface public void onReady(String t) { a.runOnUiThread(() -> cb.onReady(t)); }
             @JavascriptInterface public void onProof(String r) { a.runOnUiThread(() -> cb.onProof(r)); }
             @JavascriptInterface public void onError(String m) { a.runOnUiThread(() -> cb.onError(m)); }
+            @JavascriptInterface public void onProgress(String l) { a.runOnUiThread(() -> cb.onProgress(l)); }
         }, "Android");
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -61,7 +67,7 @@ final class ZkProver {
                         Map.of(), new ByteArrayInputStream(new byte[0]));
             }
         });
-        web.loadUrl("https://onebit.zk/zk/prove.html");
+        web.loadUrl(pageUrl);
     }
 
     /** inputs passed via base64 to avoid JS string-escaping pitfalls */
