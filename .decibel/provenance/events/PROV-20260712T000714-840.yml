@@ -1,0 +1,11 @@
+event_id: PROV-20260712T000714-840
+timestamp: 2026-07-12T00:07:14.840Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:issue:2026-07-12T00-07-14Z-t6-threat-table-adversarial-fixtures.md
+reason_code: initial_creation
+summary: "Created issue: T6: Threat-table adversarial fixtures"
+fingerprint_before: null
+fingerprint_after: sha256:e88d854e7e15dd30

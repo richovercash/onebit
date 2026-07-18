@@ -1,0 +1,10 @@
+id: ADR-0002
+scope: project
+project: onebit
+title: "ADR-002: Raw key attestation only; policy-server calls prohibited"
+status: accepted
+created_at: 2026-07-12T00:06:54.631Z
+updated_at: 2026-07-12T00:06:54.631Z
+context: Device-integrity checking could use platform policy services (Play Integrity, DeviceCheck). These are runtime chokepoints controlled by a platform vendor modeled as a rational monopolist, and they exclude alternative OSes like GrapheneOS regardless of actual security posture. Violates V1 and V4.
+decision: "Device binding uses raw hardware key attestation only: an X.509 chain from the per-verifier key K_v to a hardware root, checked against a published, versioned, verifier-controlled allowlist of attestation/verified-boot roots. GrapheneOS AVB keys ship in the reference allowlist. No policy-server call exists in the protocol."
+consequences: Verifiers (or a conformance body) own allowlist curation, including patch-level minimums and root additions. No platform vendor can revoke ecosystem access unilaterally. Tier A leaves batch-level device correlation (declared); Tier B moves attestation verification in-circuit at significant proving cost.

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "roots": [
+    {"name": "google-hw-attestation-2022", "spki_sha256": "feb2ea7551ee316ed4bb443c8293b884dbfdea40b603ee3e4f4a897e4580fbae"},
+    {"name": "google-hw-attestation-ca1-2025", "spki_sha256": "3ee44512a1af2beb39c889490c60ea3f82e43f5d5a5532f5ab9419f676cd07ec"}
+  ],
+  "verified_boot": [
+    {"name": "stock-locked", "state": "Verified"},
+    {"name": "grapheneos-pixel9a", "state": "SelfSigned", "boot_key_sha256": ["0508de44ee00bfb49ece32c418af1896391abde0f05b64f41bc9a2dfb589445b"]}
+  ],
+  "min_patch_level": 202501,
+  "require_user_auth": true,
+  "demo_allow_zk_stub": false
+}

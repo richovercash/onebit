@@ -1,0 +1,630 @@
+---
+id: EPIC-0002
+projectId: onebit
+title: Roadmap Phase 1 — Close the technical gaps
+summary: Post-T6 hardening per ROADMAP v0.2: build Circuit E + pi_E recursion (the real critical path), algorithm-coverage matrix, self-review, CI + repo bootstrap, pre-audit debt closure, and the external audit (grant-funded path: NLnet NGI Zero / OTF Red Team Lab / Aztec grants). Research preview may publish after P1.0+P1.3+P1.5 with UNAUDITED banner; production/regulatory claims wait for audit remediation.
+status: planned
+priority: high
+tags: []
+owner: 
+squad: 
+created_at: 2026-07-18T02:22:35.916Z
+---
+
+# Roadmap Phase 1 — Close the technical gaps
+
+## Summary
+
+Post-T6 hardening per ROADMAP v0.2: build Circuit E + pi_E recursion (the real critical path), algorithm-coverage matrix, self-review, CI + repo bootstrap, pre-audit debt closure, and the external audit (grant-funded path: NLnet NGI Zero / OTF Red Team Lab / Aztec grants). Research preview may publish after P1.0+P1.3+P1.5 with UNAUDITED banner; production/regulatory claims wait for audit remediation.
+
+## Motivation
+
+- [
+- "
+- C
+- i
+- r
+- c
+- u
+- i
+- t
+-  
+- P
+-  
+- v
+- 0
+-  
+- s
+- h
+- i
+- p
+- s
+-  
+- b
+- i
+- n
+- d
+- i
+- n
+- g
+- :
+- P
+- -
+- o
+- n
+- l
+- y
+-  
+- —
+-  
+- c
+- r
+- e
+- d
+- e
+- n
+- t
+- i
+- a
+- l
+-  
+- b
+- i
+- n
+- d
+- i
+- n
+- g
+-  
+- t
+- o
+-  
+- t
+- h
+- e
+-  
+- d
+- o
+- c
+- u
+- m
+- e
+- n
+- t
+-  
+- s
+- i
+- g
+- n
+- a
+- t
+- u
+- r
+- e
+-  
+- i
+- s
+-  
+- t
+- h
+- e
+-  
+- l
+- a
+- r
+- g
+- e
+- s
+- t
+-  
+- o
+- p
+- e
+- n
+-  
+- s
+- o
+- u
+- n
+- d
+- n
+- e
+- s
+- s
+-  
+- g
+- a
+- p
+- "
+- ,
+-  
+- "
+- A
+- u
+- d
+- i
+- t
+- -
+- w
+- o
+- r
+- t
+- h
+- y
+-  
+- c
+- i
+- r
+- c
+- u
+- i
+- t
+- s
+-  
+- m
+- u
+- s
+- t
+-  
+- e
+- x
+- i
+- s
+- t
+-  
+- b
+- e
+- f
+- o
+- r
+- e
+-  
+- a
+- n
+-  
+- a
+- u
+- d
+- i
+- t
+- o
+- r
+-  
+- c
+- a
+- n
+-  
+- b
+- e
+-  
+- e
+- n
+- g
+- a
+- g
+- e
+- d
+- ;
+-  
+- g
+- r
+- a
+- n
+- t
+-  
+- l
+- e
+- a
+- d
+-  
+- t
+- i
+- m
+- e
+- s
+-  
+- m
+- a
+- t
+- c
+- h
+-  
+- b
+- u
+- i
+- l
+- d
+-  
+- t
+- i
+- m
+- e
+- "
+- ,
+-  
+- "
+- D
+- e
+- v
+- e
+- l
+- o
+- p
+- m
+- e
+- n
+- t
+-  
+- m
+- u
+- s
+- t
+-  
+- p
+- r
+- o
+- c
+- e
+- e
+- d
+-  
+- r
+- e
+- g
+- a
+- r
+- d
+- l
+- e
+- s
+- s
+-  
+- o
+- f
+-  
+- f
+- u
+- n
+- d
+- i
+- n
+- g
+-  
+- (
+- z
+- e
+- r
+- o
+- -
+- b
+- u
+- d
+- g
+- e
+- t
+-  
+- t
+- r
+- a
+- c
+- k
+-  
+- d
+- e
+- f
+- i
+- n
+- e
+- d
+- )
+- "
+- ]
+
+## Outcomes
+
+- [
+- "
+- E
+- n
+- v
+- e
+- l
+- o
+- p
+- e
+-  
+- d
+- r
+- o
+- p
+- s
+-  
+- b
+- i
+- n
+- d
+- i
+- n
+- g
+- :
+- P
+- -
+- o
+- n
+- l
+- y
+- ;
+-  
+- r
+- e
+- c
+- u
+- r
+- s
+- i
+- o
+- n
+-  
+- t
+- i
+- m
+- i
+- n
+- g
+-  
+- o
+- n
+-  
+- P
+- i
+- x
+- e
+- l
+-  
+- 9
+- a
+-  
+- r
+- e
+- c
+- o
+- r
+- d
+- e
+- d
+- "
+- ,
+-  
+- "
+- C
+- o
+- v
+- e
+- r
+- a
+- g
+- e
+-  
+- t
+- a
+- b
+- l
+- e
+-  
+- {
+- c
+- o
+- u
+- n
+- t
+- r
+- y
+- ,
+-  
+- a
+- l
+- g
+- ,
+-  
+- h
+- a
+- s
+- h
+- ,
+-  
+- k
+- e
+- y
+- s
+- i
+- z
+- e
+- }
+-  
+- x
+-  
+- {
+- p
+- a
+- r
+- s
+- e
+- ,
+-  
+- P
+- A
+- ,
+-  
+- C
+- i
+- r
+- c
+- u
+- i
+- t
+- E
+- }
+- "
+- ,
+-  
+- "
+- C
+- I
+-  
+- r
+- e
+- d
+-  
+- o
+- n
+-  
+- a
+- n
+- y
+-  
+- r
+- e
+- f
+- u
+- s
+- a
+- l
+- /
+- v
+- e
+- r
+- i
+- f
+- i
+- e
+- r
+-  
+- r
+- e
+- g
+- r
+- e
+- s
+- s
+- i
+- o
+- n
+- "
+- ,
+-  
+- "
+- A
+- u
+- d
+- i
+- t
+-  
+- g
+- r
+- a
+- n
+- t
+-  
+- a
+- p
+- p
+- l
+- i
+- c
+- a
+- t
+- i
+- o
+- n
+- s
+-  
+- f
+- i
+- l
+- e
+- d
+-  
+- a
+- t
+-  
+- P
+- 1
+- .
+- 0
+-  
+- k
+- i
+- c
+- k
+- o
+- f
+- f
+- "
+- ]
+
+## Acceptance Criteria
+
+- [ ] [
+- [ ] "
+- [ ] P
+- [ ] 1
+- [ ] .
+- [ ] 0
+- [ ] -
+- [ ] P
+- [ ] 1
+- [ ] .
+- [ ] 5
+- [ ]  
+- [ ] e
+- [ ] x
+- [ ] i
+- [ ] t
+- [ ]  
+- [ ] c
+- [ ] r
+- [ ] i
+- [ ] t
+- [ ] e
+- [ ] r
+- [ ] i
+- [ ] a
+- [ ]  
+- [ ] p
+- [ ] e
+- [ ] r
+- [ ]  
+- [ ] R
+- [ ] O
+- [ ] A
+- [ ] D
+- [ ] M
+- [ ] A
+- [ ] P
+- [ ] _
+- [ ] o
+- [ ] n
+- [ ] e
+- [ ] _
+- [ ] b
+- [ ] i
+- [ ] t
+- [ ] _
+- [ ] v
+- [ ] e
+- [ ] r
+- [ ] i
+- [ ] f
+- [ ] i
+- [ ] e
+- [ ] r
+- [ ] .
+- [ ] m
+- [ ] d
+- [ ]  
+- [ ] v
+- [ ] 0
+- [ ] .
+- [ ] 2
+- [ ] "
+- [ ] ]

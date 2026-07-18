@@ -1,0 +1,2 @@
+{"ts":"2026-07-12T04:11:59.008Z","run_id":"RUN-2026-07-12T04-11-59-006Z","agent":{"type":"claude-code","version":"auto-tracked"},"type":"prompt_received","payload":{"prompt":"[Auto-tracked session via MCP tool calls]"}}
+{"ts":"2026-07-12T04:11:59.010Z","run_id":"RUN-2026-07-12T04-11-59-006Z","agent":{"type":"claude-code","version":"auto-tracked"},"type":"command_ran","payload":{"tool":"sentinel_close_issue","result":"success","summary":"sentinel_close_issue completed"}}

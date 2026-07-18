@@ -1,0 +1,11 @@
+event_id: PROV-20260712T000636-655
+timestamp: 2026-07-12T00:06:36.655Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:epic:EPIC-0001
+reason_code: initial_creation
+summary: "Created epic: One-Bit Verifier — P0 MVP"
+fingerprint_before: null
+fingerprint_after: sha256:90048bd6cff4b8e7

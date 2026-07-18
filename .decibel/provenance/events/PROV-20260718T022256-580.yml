@@ -1,0 +1,11 @@
+event_id: PROV-20260718T022256-580
+timestamp: 2026-07-18T02:22:56.580Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:issue:2026-07-18T02-22-56Z-p1-4-repo-bootstrap-ci-adversarial-harness.md
+reason_code: initial_creation
+summary: "Created issue: P1.4: Repo bootstrap + CI adversarial harness"
+fingerprint_before: null
+fingerprint_after: sha256:aa047ecf9af4ab41

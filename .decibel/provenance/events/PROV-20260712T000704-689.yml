@@ -1,0 +1,11 @@
+event_id: PROV-20260712T000704-689
+timestamp: 2026-07-12T00:07:04.689Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:issue:2026-07-12T00-07-04Z-t2-proving-benchmark-longfellow-monolithic-vs-noir.md
+reason_code: initial_creation
+summary: "Created issue: T2: Proving benchmark — Longfellow monolithic vs Noir/UltraHonk recursive"
+fingerprint_before: null
+fingerprint_after: sha256:a86e35776b4165d4

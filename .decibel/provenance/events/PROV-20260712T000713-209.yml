@@ -1,0 +1,11 @@
+event_id: PROV-20260712T000713-209
+timestamp: 2026-07-12T00:07:13.209Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:issue:2026-07-12T00-07-13Z-t5-verifier-sdk-stateless-verify-demo-gated-site.md
+reason_code: initial_creation
+summary: "Created issue: T5: Verifier SDK (stateless verify()) + demo gated site"
+fingerprint_before: null
+fingerprint_after: sha256:a4aa9527dda6c682

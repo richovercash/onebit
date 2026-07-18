@@ -1,0 +1,11 @@
+event_id: PROV-20260712T000700-869
+timestamp: 2026-07-12T00:07:00.869Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:issue:2026-07-12T00-07-00Z-t1-nfc-read-passive-authentication-in-the-clear-no.md
+reason_code: initial_creation
+summary: "Created issue: T1: NFC read + Passive Authentication in the clear (no ZK)"
+fingerprint_before: null
+fingerprint_after: sha256:dfcdab0e2d596eae

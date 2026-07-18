@@ -1,0 +1,12 @@
+import { createRequire } from 'module'; const require = createRequire(import.meta.url);
+import { Barretenberg, UltraHonkBackend, BackendType } from '@aztec/bb.js';
+import { Noir } from '@noir-lang/noir_js';
+import { readFileSync } from 'fs';
+const circuit = JSON.parse(readFileSync('./circuit_p.json', 'utf8'));
+const noir = new Noir(circuit);
+const { witness } = await noir.execute({ dob: 19800101, expiry: 20310225, k: '77', ctx: '88', current: 20260712, age_min: 18 });
+const api = await Barretenberg.new({ backend: BackendType.WasmWorker, threads: 4 });
+const backend = new UltraHonkBackend(circuit.bytecode, api);
+const { proof, publicInputs } = await backend.generateProof(witness);
+require('fs').writeFileSync('/tmp/scratch/87e4e139-9e18-4bab-9d49-4cfade790afc/scratchpad/testproof.json', JSON.stringify({ proof: Buffer.from(proof).toString('base64'), publicInputs }));
+process.exit(0);

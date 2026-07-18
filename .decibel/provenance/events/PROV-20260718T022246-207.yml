@@ -1,0 +1,11 @@
+event_id: PROV-20260718T022246-207
+timestamp: 2026-07-18T02:22:46.207Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:issue:2026-07-18T02-22-46Z-p1-0-circuit-e-pi-e-recursion-critical-path.md
+reason_code: initial_creation
+summary: "Created issue: P1.0: Circuit E + pi_E recursion (critical path)"
+fingerprint_before: null
+fingerprint_after: sha256:f40c6b1081b0bef7

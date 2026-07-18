@@ -1,0 +1,10 @@
+id: ADR-0001
+scope: project
+project: onebit
+title: "ADR-001: No registry of commitments"
+status: accepted
+created_at: 2026-07-12T00:06:50.316Z
+updated_at: 2026-07-12T00:06:50.316Z
+context: The credential commitment C = Poseidon(dob, expiry, docHash, k, salt) could be published to a registry to support revocation or duplicate detection. Any such registry becomes an observer of enrollment events and a linkability surface, violating invariants V1 (no third party at presentation) and V2 (unlinkability).
+decision: C is never transmitted and never published. No registry of commitments exists anywhere in the protocol. Rate-limiting and duplicate-use concerns are handled by verifier-scoped, epoch-scoped nullifiers instead (SPEC §4.1).
+consequences: "No global revocation of individual credentials; revocation operates only at the document-signer level via ICAO master-list versioning. Duplicate enrollment across devices is possible and accepted. In exchange: no enrollment observer, no linkable global identifier, nothing to breach."

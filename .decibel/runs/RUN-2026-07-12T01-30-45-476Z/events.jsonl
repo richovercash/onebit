@@ -1,0 +1,2 @@
+{"ts":"2026-07-12T01:30:45.477Z","run_id":"RUN-2026-07-12T01-30-45-476Z","agent":{"type":"claude-code","version":"auto-tracked"},"type":"prompt_received","payload":{"prompt":"[Auto-tracked session via MCP tool calls]"}}
+{"ts":"2026-07-12T01:30:45.478Z","run_id":"RUN-2026-07-12T01-30-45-476Z","agent":{"type":"claude-code","version":"auto-tracked"},"type":"command_ran","payload":{"tool":"architect_createAdr","result":"success","summary":"Created ADR : ADR-003: Proving architecture — Option B (split + recursion, Noir/UltraHonk)"}}

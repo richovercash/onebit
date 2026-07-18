@@ -1,0 +1,11 @@
+event_id: PROV-20260718T022235-938
+timestamp: 2026-07-18T02:22:35.938Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:epic:EPIC-0002
+reason_code: initial_creation
+summary: "Created epic: Roadmap Phase 1 — Close the technical gaps"
+fingerprint_before: null
+fingerprint_after: sha256:57a44d2239352806

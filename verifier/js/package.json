@@ -1,0 +1,16 @@
+{
+  "name": "js",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aztec/bb.js": "^4.2.0-aztecnr-rc.2",
+    "@noir-lang/noir_js": "^1.0.0-beta.20"
+  }
+}

@@ -1,0 +1,28 @@
+# build outputs
+build/
+*/build/
+.gradle/
+**/target/
+*.class
+
+# node
+node_modules/
+
+# vendored clones (fetch via scripts; not part of our source)
+bench/zkpassport-circuits/
+bench/longfellow-zk/
+bench/noir/*/target/
+bench/noir/crs/
+
+# local config / secrets
+local.properties
+*.keystore
+*.jks
+
+# IDE
+*.iml
+.idea/
+.vscode/
+
+# scratch
+*.log

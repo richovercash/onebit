@@ -1,0 +1,9 @@
+[
+  {
+    "id": "1783814844126-7o2xne",
+    "title": "One-Bit Verifier: source of truth is SPEC_one_bit_verifier.md",
+    "body": "SPEC_one_bit_verifier.md (v0.1) at project root is authoritative. Invariants V0–V6 (§1) are permanent; any change requires an ADR and is presumed wrong. Key gates: T2 proving benchmark decides Option A (Longfellow monolithic) vs Option B (Noir/UltraHonk recursive) at ≤2.5s p50 / ≤6s p95 on reference low-end device → record as ADR-003. Build sequence T1–T6 tracked as sentinel issues under EPIC-0001.",
+    "trust": "high",
+    "ts": "2026-07-12T00:07:24.126Z"
+  }
+]

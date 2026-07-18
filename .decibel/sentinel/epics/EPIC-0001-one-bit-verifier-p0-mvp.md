@@ -1,0 +1,722 @@
+---
+id: EPIC-0001
+projectId: onebit
+title: One-Bit Verifier — P0 MVP
+summary: Self-issued, device-bound, unlinkable age verification derived from ICAO 9303 passport chips. Wallet seals a chip-derived credential in the secure element and answers verifier challenges with fresh, origin-bound ZK proofs disclosing exactly one bit. P0 target: web gate, Tier A attestation, Mode A (chip-derived) enrollment. Spec: SPEC_one_bit_verifier.md v0.1.
+status: planned
+priority: high
+tags: []
+owner: 
+squad: 
+created_at: 2026-07-12T00:06:36.642Z
+---
+
+# One-Bit Verifier — P0 MVP
+
+## Summary
+
+Self-issued, device-bound, unlinkable age verification derived from ICAO 9303 passport chips. Wallet seals a chip-derived credential in the secure element and answers verifier challenges with fresh, origin-bound ZK proofs disclosing exactly one bit. P0 target: web gate, Tier A attestation, Mode A (chip-derived) enrollment. Spec: SPEC_one_bit_verifier.md v0.1.
+
+## Motivation
+
+- [
+- "
+- A
+- g
+- e
+-  
+- g
+- a
+- t
+- e
+- s
+-  
+- t
+- o
+- d
+- a
+- y
+-  
+- l
+- e
+- a
+- k
+-  
+- f
+- u
+- l
+- l
+-  
+- i
+- d
+- e
+- n
+- t
+- i
+- t
+- y
+-  
+- d
+- o
+- c
+- u
+- m
+- e
+- n
+- t
+- s
+-  
+- t
+- o
+-  
+- v
+- e
+- r
+- i
+- f
+- i
+- e
+- r
+- s
+- ;
+-  
+- t
+- h
+- e
+-  
+- p
+- r
+- o
+- t
+- o
+- c
+- o
+- l
+-  
+- m
+- a
+- k
+- e
+- s
+-  
+- o
+- v
+- e
+- r
+- -
+- d
+- i
+- s
+- c
+- l
+- o
+- s
+- u
+- r
+- e
+-  
+- i
+- n
+- e
+- x
+- p
+- r
+- e
+- s
+- s
+- i
+- b
+- l
+- e
+-  
+- (
+- i
+- n
+- v
+- a
+- r
+- i
+- a
+- n
+- t
+-  
+- V
+- 0
+- )
+- "
+- ,
+-  
+- "
+- N
+- o
+-  
+- t
+- h
+- i
+- r
+- d
+-  
+- p
+- a
+- r
+- t
+- y
+-  
+- a
+- t
+-  
+- p
+- r
+- e
+- s
+- e
+- n
+- t
+- a
+- t
+- i
+- o
+- n
+-  
+- t
+- i
+- m
+- e
+-  
+- —
+-  
+- n
+- o
+-  
+- i
+- s
+- s
+- u
+- e
+- r
+- ,
+-  
+- p
+- l
+- a
+- t
+- f
+- o
+- r
+- m
+- ,
+-  
+- o
+- r
+-  
+- p
+- o
+- l
+- i
+- c
+- y
+- -
+- s
+- e
+- r
+- v
+- e
+- r
+-  
+- c
+- h
+- o
+- k
+- e
+- p
+- o
+- i
+- n
+- t
+-  
+- (
+- V
+- 1
+- /
+- V
+- 4
+- )
+- "
+- ,
+-  
+- "
+- V
+- e
+- r
+- i
+- f
+- i
+- e
+- r
+-  
+- s
+- t
+- o
+- r
+- e
+- s
+-  
+- n
+- o
+- t
+- h
+- i
+- n
+- g
+-  
+- s
+- e
+- c
+- u
+- r
+- i
+- t
+- y
+- -
+- c
+- r
+- i
+- t
+- i
+- c
+- a
+- l
+- ;
+-  
+- n
+- o
+- t
+- h
+- i
+- n
+- g
+-  
+- t
+- o
+-  
+- b
+- r
+- e
+- a
+- c
+- h
+-  
+- (
+- V
+- 3
+- )
+- "
+- ]
+
+## Outcomes
+
+- [
+- "
+- E
+- n
+- d
+- -
+- t
+- o
+- -
+- e
+- n
+- d
+-  
+- a
+- g
+- e
+-  
+- g
+- a
+- t
+- e
+-  
+- o
+- n
+-  
+- G
+- r
+- a
+- p
+- h
+- e
+- n
+- e
+- O
+- S
+-  
+- i
+- n
+-  
+- u
+- n
+- d
+- e
+- r
+-  
+- 5
+-  
+- s
+- e
+- c
+- o
+- n
+- d
+- s
+-  
+- i
+- n
+- c
+- l
+- u
+- d
+- i
+- n
+- g
+-  
+- b
+- i
+- o
+- m
+- e
+- t
+- r
+- i
+- c
+-  
+- (
+- T
+- 5
+-  
+- e
+- x
+- i
+- t
+-  
+- c
+- r
+- i
+- t
+- e
+- r
+- i
+- o
+- n
+- )
+- "
+- ,
+-  
+- "
+- A
+- D
+- R
+- -
+- 0
+- 0
+- 3
+-  
+- p
+- r
+- o
+- v
+- i
+- n
+- g
+- -
+- a
+- r
+- c
+- h
+- i
+- t
+- e
+- c
+- t
+- u
+- r
+- e
+-  
+- d
+- e
+- c
+- i
+- s
+- i
+- o
+- n
+-  
+- r
+- e
+- c
+- o
+- r
+- d
+- e
+- d
+-  
+- f
+- r
+- o
+- m
+-  
+- T
+- 2
+-  
+- b
+- e
+- n
+- c
+- h
+- m
+- a
+- r
+- k
+- "
+- ,
+-  
+- "
+- A
+- l
+- l
+-  
+- t
+- h
+- r
+- e
+- a
+- t
+- -
+- t
+- a
+- b
+- l
+- e
+-  
+- a
+- d
+- v
+- e
+- r
+- s
+- a
+- r
+- i
+- a
+- l
+-  
+- f
+- i
+- x
+- t
+- u
+- r
+- e
+- s
+-  
+- f
+- a
+- i
+- l
+-  
+- c
+- l
+- o
+- s
+- e
+- d
+-  
+- (
+- T
+- 6
+- )
+- "
+- ]
+
+## Acceptance Criteria
+
+- [ ] [
+- [ ] "
+- [ ] T
+- [ ] 1
+- [ ] –
+- [ ] T
+- [ ] 6
+- [ ]  
+- [ ] e
+- [ ] x
+- [ ] i
+- [ ] t
+- [ ]  
+- [ ] c
+- [ ] r
+- [ ] i
+- [ ] t
+- [ ] e
+- [ ] r
+- [ ] i
+- [ ] a
+- [ ]  
+- [ ] i
+- [ ] n
+- [ ]  
+- [ ] S
+- [ ] P
+- [ ] E
+- [ ] C
+- [ ]  
+- [ ] §
+- [ ] 9
+- [ ]  
+- [ ] a
+- [ ] l
+- [ ] l
+- [ ]  
+- [ ] m
+- [ ] e
+- [ ] t
+- [ ] "
+- [ ] ,
+- [ ]  
+- [ ] "
+- [ ] I
+- [ ] n
+- [ ] v
+- [ ] a
+- [ ] r
+- [ ] i
+- [ ] a
+- [ ] n
+- [ ] t
+- [ ] s
+- [ ]  
+- [ ] V
+- [ ] 0
+- [ ] –
+- [ ] V
+- [ ] 6
+- [ ]  
+- [ ] h
+- [ ] o
+- [ ] l
+- [ ] d
+- [ ] ;
+- [ ]  
+- [ ] a
+- [ ] n
+- [ ] y
+- [ ]  
+- [ ] d
+- [ ] e
+- [ ] v
+- [ ] i
+- [ ] a
+- [ ] t
+- [ ] i
+- [ ] o
+- [ ] n
+- [ ]  
+- [ ] h
+- [ ] a
+- [ ] s
+- [ ]  
+- [ ] a
+- [ ] n
+- [ ]  
+- [ ] A
+- [ ] D
+- [ ] R
+- [ ] "
+- [ ] ,
+- [ ]  
+- [ ] "
+- [ ] Z
+- [ ] e
+- [ ] r
+- [ ] o
+- [ ]  
+- [ ] n
+- [ ] e
+- [ ] t
+- [ ] w
+- [ ] o
+- [ ] r
+- [ ] k
+- [ ]  
+- [ ] I
+- [ ] /
+- [ ] O
+- [ ]  
+- [ ] d
+- [ ] u
+- [ ] r
+- [ ] i
+- [ ] n
+- [ ] g
+- [ ]  
+- [ ] e
+- [ ] n
+- [ ] r
+- [ ] o
+- [ ] l
+- [ ] l
+- [ ] m
+- [ ] e
+- [ ] n
+- [ ] t
+- [ ]  
+- [ ] a
+- [ ] n
+- [ ] d
+- [ ]  
+- [ ] p
+- [ ] r
+- [ ] e
+- [ ] s
+- [ ] e
+- [ ] n
+- [ ] t
+- [ ] a
+- [ ] t
+- [ ] i
+- [ ] o
+- [ ] n
+- [ ] ,
+- [ ]  
+- [ ] a
+- [ ] s
+- [ ] s
+- [ ] e
+- [ ] r
+- [ ] t
+- [ ] e
+- [ ] d
+- [ ]  
+- [ ] b
+- [ ] y
+- [ ]  
+- [ ] i
+- [ ] n
+- [ ] s
+- [ ] t
+- [ ] r
+- [ ] u
+- [ ] m
+- [ ] e
+- [ ] n
+- [ ] t
+- [ ] e
+- [ ] d
+- [ ]  
+- [ ] t
+- [ ] e
+- [ ] s
+- [ ] t
+- [ ] s
+- [ ] "
+- [ ] ]

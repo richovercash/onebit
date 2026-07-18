@@ -1,0 +1,11 @@
+event_id: PROV-20260712T061815-384
+timestamp: 2026-07-12T06:18:15.384Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - learnings:entry:onebit:1
+reason_code: initial_creation
+summary: "Appended learning: Offline ZK proving in an Android WebView with zero network permission (bb.js + noir_js)"
+fingerprint_before: null
+fingerprint_after: sha256:0a408ce5aa9c8a42
