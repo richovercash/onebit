@@ -80,6 +80,11 @@ public class MainActivity extends Activity {
         attest.setOnClickListener(v -> Attest.run(this, "demo-verifier-01", this::say));
         root.addView(attest);
 
+        android.widget.Button nativeBtn = new android.widget.Button(this);
+        nativeBtn.setText("Native prove (slim circuit, JNI)");
+        nativeBtn.setOnClickListener(v -> nativeProveTest());
+        root.addView(nativeBtn);
+
         addBench(root, "Benchmark: recursion (Circuit P v1, 775k)",
                 "c=circuit_p_v1.json&i=bench_p_inputs.json&l=recursion-775k");
         addBench(root, "Benchmark: monolithic (Option A, 177k)",
@@ -118,6 +123,49 @@ public class MainActivity extends Activity {
     protected void onNewIntent(android.content.Intent intent) {
         super.onNewIntent(intent);
         handleDeepLink(intent);
+    }
+
+    /** JNI native-proving test: loads libonebitprover.so and proves the slim
+     *  circuit. g1.dat must be pushed to the app files dir first. */
+    private void nativeProveTest() {
+        final String TAG = "ONEBIT_NATIVE";
+        if (NativeProver.loadError != null) {
+            android.util.Log.e(TAG, "LOAD FAILED", NativeProver.loadError);
+            say("Native lib FAILED to load: " + NativeProver.loadError);
+            return;
+        }
+        android.util.Log.i(TAG, "lib loaded OK");
+        say("Native lib loaded OK. Proving slim circuit…");
+        new Thread(() -> {
+            android.os.PowerManager pm = getSystemService(android.os.PowerManager.class);
+            android.os.PowerManager.WakeLock wl = pm.newWakeLock(
+                    android.os.PowerManager.PARTIAL_WAKE_LOCK, "onebit:prove");
+            try {
+                // Keep CPU at full clocks during proving (screen may be off).
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
+                wl.acquire(120_000);
+                String circuit = readAsset("zk/mono_slim.json");
+                String witness = readAsset("zk/wit_slim.txt");
+                java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
+                if (!g1.exists()) { android.util.Log.e(TAG, "missing g1 " + g1); return; }
+                long t0 = System.currentTimeMillis();
+                byte[] proof = NativeProver.prove(circuit, witness, g1.getAbsolutePath(), false);
+                android.util.Log.i(TAG, "PROVE OK " + (System.currentTimeMillis() - t0)
+                        + " ms, proof " + proof.length + " bytes");
+                say("NATIVE PROVE OK in " + (System.currentTimeMillis() - t0) + " ms");
+            } catch (Throwable t) {
+                android.util.Log.e(TAG, "PROVE FAIL", t);
+                say("Native prove FAIL: " + t);
+            } finally {
+                if (wl.isHeld()) wl.release();
+            }
+        }).start();
+    }
+
+    private String readAsset(String path) throws Exception {
+        try (java.io.InputStream in = getAssets().open(path)) {
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
     }
 
     private final StringBuilder benchLog = new StringBuilder();

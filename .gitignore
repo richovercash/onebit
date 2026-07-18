@@ -31,3 +31,4 @@ local.properties
 *.log
 bench/noir-rs/
 bench/android-ndk-r27c/
+app/src/main/jniLibs/

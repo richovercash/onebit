@@ -1,0 +1,13 @@
+[package]
+name = "onebitprover"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "onebitprover"
+crate-type = ["cdylib"]
+
+[dependencies]
+noir = { path = "../noir", features = ["barretenberg"] }
+jni = "0.21"
+serde_json = "1.0"

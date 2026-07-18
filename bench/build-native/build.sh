@@ -24,3 +24,9 @@ export RUSTFLAGS="-L native=$LINKDIR -C link-arg=$HERE/cxxstub.o -C link-arg=-Wl
 cd "$HERE/../noir-rs"
 cargo build -p bench_native --target aarch64-linux-android --release
 echo "binary: $(pwd)/target/aarch64-linux-android/release/bench_native"
+
+# Build the JNI cdylib for the wallet app:
+#   cargo build -p onebitprover --target aarch64-linux-android --release  (same RUSTFLAGS)
+# then bundle into app/src/main/jniLibs/arm64-v8a/:
+#   libonebitprover.so  (the cdylib)
+#   libc++.so           (pull from a phone: adb pull /system/lib64/libc++.so — upstream __1)
