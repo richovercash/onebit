@@ -1,17 +1,10 @@
----
 projectId: onebit
 severity: critical
-status: open
+status: in_progress
 created_at: 2026-07-18T02:22:46.195Z
 epic_id: EPIC-0002
----
+description: |-
+  
 
-# P1.0: Circuit E + pi_E recursion (critical path)
-
-**Severity:** critical
-**Status:** open
-**Epic:** EPIC-0002
-
-## Details
-
-Fork zkPassport sig-check/id-data circuits (pinned toolchain nargo 1.0.0-beta.20 / bb 4.2.0 already local in bench/zkpassport-circuits). Bind outputs to commitment C; Circuit P verifies pi_E in-circuit via verify_proof (their outer circuit = working recursion pattern). Move DG1 parsing + century rule in-circuit (spec §3.1 same-rule clause; currently Java-only — pre-found P1.3 discrepancy). Exit: envelope drops binding:"P-only"; Circuit-P-with-recursion p50/p95 on Pixel 9a vs <5s budget. At KICKOFF (not completion): file audit grant applications (NLnet NGI Zero, OTF Red Team Lab, Aztec grants) and/or book auditor. Est 3-6 weeks.
+  [2026-07-18] Circuit E v0 built + committed (76901c1). circuits/e: proves SHA256(DG1)∈eContent, RSA-2048 PKCS#1v1.5 DSC sig, depth-20 Poseidon Merkle membership, C=Poseidon2(dob,expiry,docHash,k,salt) with §3.1 century rule in-circuit (docHash=Poseidon(eContent hash)). Outputs (C, computed root) — output form chosen so gen_inputs needn't run Poseidon in Python; Circuit P will assert root==pinned. Measured i9/32T bb4.2.0: 177,495 UH gates, ~1.05s prove, proof VERIFIES. Remaining for P1.0 (NOTES.md): Circuit P v1 with std::verify_proof(π_E) recursion + C-rebind assertion + on-Pixel-9a remeasure; coverage variants PSS/ECDSA/4096 (P1.1); real Merkle root over bundled master list (currently synthetic path); docHash preimage review. Also this session: local-only git repo initialized (git init, .gitignore excludes build/node_modules/vendored clones; 286 files, 20MB), initial commit of T1-T6 state.
+updated_at: 2026-07-18T03:58:55.363Z
