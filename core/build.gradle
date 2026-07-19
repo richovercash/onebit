@@ -18,3 +18,8 @@ tasks.register('sodSizes', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'onebit.core.SodSizes'
 }
+
+tasks.register('cmsProbe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.CmsProbe'
+}
