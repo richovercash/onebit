@@ -23,3 +23,9 @@ tasks.register('cmsProbe', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'onebit.core.CmsProbe'
 }
+
+tasks.register('enrollProbe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.EnrollProbe'
+    systemProperty 'out', project.rootDir.path + '/circuits/enroll/Prover.toml'
+}
