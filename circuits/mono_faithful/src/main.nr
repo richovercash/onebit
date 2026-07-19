@@ -27,13 +27,11 @@ fn main(
     sig: [u128; 18],
     modulus: [u128; 18],
     redc: [u128; 18],
-    merkle_path: [Field; 20],
-    merkle_dirs: u32,
     k: Field,
     ctx: pub Field,
     current: pub u32,
     age_min: pub u32,
-) -> pub (Field, Field) { // (N, dsc_root)
+) -> pub (Field, Field) { // (N, dsc_commit)
     // 1. SHA256(DG1) in the LDS security object
     let h_dg1 = digest(dg1);
     for i in 0..32 {
@@ -52,18 +50,14 @@ fn main(
     let sig_bn: RuntimeBigNum<18, 2048> = RuntimeBigNum { params, limbs: sig };
     assert(verify_sha256_pkcs1v15(h_sa, sig_bn, 65537));
 
-    // 4. DSC identity = Poseidon(modulus limbs); fold to root
+    // 4. Commit the DSC public key. The enrollment proof commits the same
+    //    Poseidon2(dsc_modulus); matching dsc_commit chains CSCA->DSC (enroll)
+    //    with DSC->SOD (here). See docs/stage-enrollment-circuit.md.
     let mut mod_fields: [Field; 18] = [0; 18];
     for i in 0..18 {
         mod_fields[i] = modulus[i] as Field;
     }
-    let mut node = Poseidon2::hash(mod_fields, 18);
-    for i in 0..20 {
-        let dir = (merkle_dirs >> i) & 1;
-        let l = if dir == 1 { merkle_path[i] } else { node };
-        let r = if dir == 1 { node } else { merkle_path[i] };
-        node = Poseidon2::hash([l, r], 2);
-    }
+    let dsc_commit = Poseidon2::hash(mod_fields, 18);
 
     // 5. Predicates (century rule per SPEC S3.1) + nullifier
     let dob = full_date(dg1, MRZ_OFF + 57, current);
@@ -71,7 +65,7 @@ fn main(
     assert(dob + age_min * 10000 <= current);
     assert(exp >= current);
     let n = Poseidon2::hash([k, ctx], 2);
-    (n, node)
+    (n, dsc_commit)
 }
 
 fn full_date(b: [u8; 93], off: u32, current: u32) -> u32 {

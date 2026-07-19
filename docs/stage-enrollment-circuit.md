@@ -42,10 +42,25 @@ The full ICAO trust chain is then proven in ZK, split at the right seam:
 CSCA→DSC once (expensive, 141k gates), DSC→SOD per presentation (cheap, 79k,
 ~4.5 s).
 
-## Remaining wiring (to make it live)
+## Linkage: DEMONSTRATED
 
-1. Expose `dsc_commit` as a public output of `mono_faithful`; verifier checks it
-   equals the enrollment proof's `dsc_commit`.
+`core/ChainProbe` builds one consistent CSCA-4096 → DSC-2048 → SOD chain and
+emits both witnesses from the **same DSC key**. Executing both circuits:
+
+```
+enroll         -> (dsc_commit=0x297d7f7d…, root=0x18544688…)
+mono_faithful  -> (N=0x25c25b83…, dsc_commit=0x297d7f7d…)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^ identical
+```
+
+The two circuits agree on `dsc_commit` — the full CSCA→DSC→SOD chain holds in ZK.
+`mono_faithful` now outputs `dsc_commit` (no synthetic merkle; 79k→75k gates).
+
+## Remaining wiring (to make it live on device)
+
+1. ~~Expose `dsc_commit` from `mono_faithful` and match it~~ — DONE (above).
+   Verifier still needs to receive both proofs and assert the match + `root ==
+   published`.
 2. **Real master-list Merkle tree** over the CSCA moduli (poseidon2 builder,
    already validated byte-identical to the circuit); wallet supplies the real
    path for its DSC's issuing CSCA.

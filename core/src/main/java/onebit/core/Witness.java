@@ -74,12 +74,7 @@ public final class Witness {
         limbs(w, d.sig);
         limbs(w, n);
         limbs(w, redc);
-        // merkle_path (20) + dirs — synthetic until the real CSCA tree lands.
-        java.security.SecureRandom rnd = new java.security.SecureRandom();
-        BigInteger P = new BigInteger(
-                "21888242871839275222246405745257275088548364400416034343698204186575808495617");
-        for (int i = 0; i < 20; i++) w.add(new BigInteger(250, rnd).mod(P).toString());
-        w.add("349525"); // merkle_dirs
+        // (no merkle here — DSC trust is the enroll proof's job, ADR-005)
         return w;
     }
 
