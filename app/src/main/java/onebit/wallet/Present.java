@@ -192,12 +192,22 @@ final class Present {
                 .put("mode", "A")
                 .put("tier", "A")
                 .put("circuit", "mono_faithful")
+                .put("enroll_proof", enrollProofB64())
                 .put("binding", "document") // real passport: faithful CMS PA in-circuit (merkle root still synthetic)
                 .toString();
     }
 
     // noir-rs proof: [uint32 num_public][public_inputs][proof]. Public input
     // `index` lives at 4 + index*32.
+    /** persisted enroll proof (base64), or "" if none. */
+    private String enrollProofB64() {
+        try {
+            byte[] p = java.nio.file.Files.readAllBytes(
+                    new java.io.File(a.getFilesDir(), "enrollproof.bin").toPath());
+            return Base64.encodeToString(p, Base64.NO_WRAP);
+        } catch (Exception e) { return ""; }
+    }
+
     private static String fieldHex(byte[] flat, int index) {
         int off = 4 + index * 32;
         BigInteger v = new BigInteger(1, java.util.Arrays.copyOfRange(flat, off, off + 32));

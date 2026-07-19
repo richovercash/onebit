@@ -12,7 +12,7 @@ use rsa::rsa::verify_sha256_pkcs1v15;
 use sha256::sha256_var;
 
 fn main(
-    dsc_tbs: [u8; 1024],       // DSC certificate TBS (what the CSCA signed)
+    dsc_tbs: [u8; 2048],       // DSC certificate TBS (what the CSCA signed; real ~1.2KB)
     dsc_tbs_len: u32,
     csca_sig: [u128; 35],      // CSCA signature over SHA256(dsc_tbs), RSA-4096
     csca_modulus: [u128; 35],

@@ -140,6 +140,7 @@ public final class DemoServer {
             return "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
                 + "<body style='font-family:sans-serif;max-width:40em;margin:2em auto;padding:0 1em'>"
                 + "<h1 style='color:#188038'>ACCESS GRANTED &#127866;</h1>" + stub
+                + (v.chain.isEmpty() ? "" : "<p style='background:#e6f4ea;padding:.5em;border-radius:6px'>&#128279; chain: " + v.chain + "</p>")
                 + (e2eMs >= 0 ? "<p>challenge&rarr;verdict: <b>" + e2eMs + " ms</b></p>" : "")
                 + "<pre style='background:#f1f3f4;padding:1em;border-radius:6px;white-space:pre-wrap'>"
                 + v.attestation + "</pre>"

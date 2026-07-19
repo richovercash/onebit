@@ -3,6 +3,7 @@ package onebit.core;
 import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
 import java.security.MessageDigest;
+import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.List;
@@ -76,6 +77,56 @@ public final class Witness {
         limbs(w, redc);
         // (no merkle here — DSC trust is the enroll proof's job, ADR-005)
         return w;
+    }
+
+    /** Build the enroll-circuit witness from the live document: the DSC cert
+     *  (in the SOD) and its issuing CSCA (matched in the master list). Returns
+     *  null if the CSCA is not RSA (the RSA-4096 enroll variant can't prove it).
+     *  Merkle path synthetic until the real CSCA tree lands. */
+    public static List<String> enroll(byte[] dg1, byte[] sodBytes,
+                                      java.util.Collection<X509Certificate> masterList) throws Exception {
+        TLVInputStream tlv = new TLVInputStream(new ByteArrayInputStream(sodBytes));
+        tlv.readTag(); tlv.readLength();
+        CMSSignedData cms = new CMSSignedData(tlv.readValue());
+        SignerInformation signer = cms.getSignerInfos().getSigners().iterator().next();
+        org.bouncycastle.cert.X509CertificateHolder holder =
+                (org.bouncycastle.cert.X509CertificateHolder)
+                        cms.getCertificates().getMatches(signer.getSID()).iterator().next();
+        X509Certificate dsc = new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                .getCertificate(holder);
+        X509Certificate csca = null;
+        for (X509Certificate c : masterList) {
+            if (!dsc.getIssuerX500Principal().equals(c.getSubjectX500Principal())) continue;
+            try { dsc.verify(c.getPublicKey()); csca = c; break; } catch (Exception ignored) { }
+        }
+        if (csca == null) throw new IllegalStateException("CSCA not found for DSC");
+        if (!(csca.getPublicKey() instanceof RSAPublicKey)) return null; // ECDSA CSCA -> other variant
+
+        BigInteger cscaN = ((RSAPublicKey) csca.getPublicKey()).getModulus();
+        BigInteger dscN = ((RSAPublicKey) dsc.getPublicKey()).getModulus();
+        BigInteger cscaSig = new BigInteger(1, dsc.getSignature());
+        byte[] tbs = dsc.getTBSCertificate();
+        if (cscaN.bitLength() > 4096 || tbs.length > 2048)
+            throw new IllegalStateException("CSCA " + cscaN.bitLength() + "bit / TBS " + tbs.length + "B exceeds enroll caps");
+
+        List<String> w = new ArrayList<>();
+        bytes(w, pad(tbs, 2048));
+        w.add(String.valueOf(tbs.length));
+        limbsHex(w, cscaSig, 35);
+        limbsHex(w, cscaN, 35);
+        limbsHex(w, BigInteger.ONE.shiftLeft(2 * 4096 + 6).divide(cscaN), 35);
+        java.security.SecureRandom rnd = new java.security.SecureRandom();
+        BigInteger P = new BigInteger(
+                "21888242871839275222246405745257275088548364400416034343698204186575808495617");
+        for (int i = 0; i < 20; i++) w.add(new BigInteger(250, rnd).mod(P).toString());
+        w.add("349525"); // merkle_dirs
+        limbsHex(w, dscN, 18);
+        return w;
+    }
+
+    static void limbsHex(List<String> w, BigInteger x, int n) {
+        BigInteger mask = BigInteger.ONE.shiftLeft(120).subtract(BigInteger.ONE);
+        for (int i = 0; i < n; i++) w.add("0x" + x.shiftRight(120 * i).and(mask).toString(16));
     }
 
     static void bytes(List<String> w, byte[] b) { for (byte x : b) w.add(String.valueOf(x & 0xff)); }

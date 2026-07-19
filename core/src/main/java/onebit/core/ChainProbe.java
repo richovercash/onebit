@@ -56,7 +56,7 @@ public final class ChainProbe {
         path.append("]");
 
         String enroll =
-              "dsc_tbs = " + bytes(pad(tbs, 1024)) + "\n"
+              "dsc_tbs = " + bytes(pad(tbs, 2048)) + "\n"
             + "dsc_tbs_len = " + tbs.length + "\n"
             + "csca_sig = " + limbs(new BigInteger(1, dscCert.getSignature()), 35) + "\n"
             + "csca_modulus = " + limbs(cscaN, 35) + "\n"

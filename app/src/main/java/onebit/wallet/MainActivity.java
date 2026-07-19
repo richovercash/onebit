@@ -186,6 +186,35 @@ public class MainActivity extends Activity {
         root.addView(b);
     }
 
+    /** One-time enrollment proof: CSCA(RSA, in master list) signed the DSC.
+     *  Persisted as enrollproof.bin; presentation sends it alongside. */
+    private void proveEnroll(byte[] dg1, byte[] sod,
+                             java.util.List<java.security.cert.X509Certificate> masterList,
+                             PassiveAuth.MrzData d) {
+        try {
+            java.util.List<String> ew = onebit.core.Witness.enroll(dg1, sod, masterList);
+            if (ew == null) { say("Enrolled (DSC OK). CSCA is ECDSA — enroll proof needs that variant."); return; }
+            java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
+            if (!g1.exists()) { say("Enrolled. (SRS missing for enroll proof.)"); return; }
+            android.os.PowerManager pm = getSystemService(android.os.PowerManager.class);
+            android.os.PowerManager.WakeLock wl = pm.newWakeLock(
+                    android.os.PowerManager.PARTIAL_WAKE_LOCK, "onebit:enroll");
+            wl.acquire(120_000);
+            try {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
+                String circuit = readAsset("zk/enroll.json");
+                long e0 = System.currentTimeMillis();
+                byte[] proof = NativeProver.prove(circuit, String.join("\n", ew), g1.getAbsolutePath(), false);
+                java.nio.file.Files.write(new java.io.File(getFilesDir(), "enrollproof.bin").toPath(), proof);
+                say("ENROLLED — CSCA→DSC proven in " + (System.currentTimeMillis() - e0) + " ms.\n"
+                        + "DSC: " + d.dscInfo + " · full chain ready.");
+            } finally { if (wl.isHeld()) wl.release(); }
+        } catch (Throwable ex) {
+            android.util.Log.w("ONEBIT_ENROLL", "enroll proof: " + ex);
+            say("Enrolled (DSC→SOD ready). Enroll proof skipped: " + ex);
+        }
+    }
+
     /** Persist credential attributes (SPEC §3.1.5).
      *  ponytail: app-private prefs for the demo; SE-wrap with auth-gated AES
      *  key before anything ships. */
@@ -332,10 +361,9 @@ public class MainActivity extends Activity {
                     java.nio.file.Files.write(
                             new java.io.File(getFilesDir(), "docwit.txt").toPath(),
                             String.join("\n", docWit).getBytes());
-                    say("PASSIVE AUTHENTICATION OK — real document witness stored\n"
-                            + "DSC: " + d.dscInfo + " · eContent " + wd.eContent.length + "B\n"
-                            + "age ≥ 18: " + Mrz.ageGte(d.dateOfBirth, t, 18)
-                            + " · not expired: " + Mrz.notExpired(d.dateOfExpiry, t));
+                    say("PASSIVE AUTHENTICATION OK — proving CSCA→DSC (enroll, ~10s)…");
+                    // Enrollment proof: CSCA(in master list)→DSC, once. ADR-005.
+                    proveEnroll(dg1, sod, masterList, d);
                 } catch (Throwable ex) {
                     android.util.Log.w("ONEBIT_COVERAGE", "witness: " + ex);
                 }

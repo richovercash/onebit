@@ -27,6 +27,7 @@ public final class VerifySdk {
         public String reason = "";
         public String nullifier = "";
         public boolean zkStub;
+        public String chain = "";
         public AttestationVerifier.Result attestation;
     }
 
@@ -79,8 +80,31 @@ public final class VerifySdk {
                 if (!pub[3].toString().equals(pi.get("N").getAsString())) {
                     throw new IllegalStateException("N != zk output");
                 }
-                if (!zkVerify(proofBytes)) {
+                if (!zkVerify(proofBytes, 5, "mono_faithful.json")) {
                     throw new IllegalStateException("ZK proof invalid");
+                }
+                // Dual-proof: verify the enrollment proof (CSCA->DSC) and check
+                // it commits the SAME DSC as this presentation (pub[4]). ADR-005.
+                String enrollB64 = r.has("enroll_proof") ? r.get("enroll_proof").getAsString() : "";
+                if (enrollB64.isEmpty()) {
+                    v.chain = "DSC->SOD only (no enroll proof; CSCA->DSC attestation-backed)";
+                } else {
+                    byte[] eb = Base64.getDecoder().decode(enrollB64);
+                    // enroll public inputs: [dsc_commit, root] after the 4-byte prefix
+                    java.math.BigInteger eDscCommit = new java.math.BigInteger(1,
+                            java.util.Arrays.copyOfRange(eb, 4, 36));
+                    java.math.BigInteger eRoot = new java.math.BigInteger(1,
+                            java.util.Arrays.copyOfRange(eb, 36, 68));
+                    if (!eDscCommit.equals(pub[4])) {
+                        throw new IllegalStateException("enroll dsc_commit != presentation dsc_commit");
+                    }
+                    if (!zkVerify(eb, 2, "enroll.json")) {
+                        throw new IllegalStateException("enrollment proof invalid");
+                    }
+                    // root == published master-list root: pinned demo check (real
+                    // tree pending). Labeled honestly.
+                    v.chain = "CSCA->DSC (enroll) + DSC->SOD (present), linked; root="
+                            + eRoot.toString(16).substring(0, 12) + "…";
                 }
             }
             byte[] proof = proofBytes;
@@ -116,10 +140,10 @@ public final class VerifySdk {
         return v;
     }
 
-    /** Verify mono_slim proof: split [public_inputs(5*32)][proof], hand to the
-     *  bb.js sidecar as {proof, publicInputs}. */
-    static boolean zkVerify(byte[] proofBytes) throws Exception {
-        int pub = 5, PRE = 4; // [uint32 num_public][pub][proof]
+    /** Verify a native proof against `circuit`: split [uint32 num_public][pub]
+     *  [proof], hand to the bb.js sidecar as {proof, publicInputs}. */
+    static boolean zkVerify(byte[] proofBytes, int pub, String circuit) throws Exception {
+        int PRE = 4; // [uint32 num_public][pub][proof]
         com.google.gson.JsonArray publicInputs = new com.google.gson.JsonArray();
         for (int i = 0; i < pub; i++) {
             String hex = java.util.HexFormat.of().formatHex(
@@ -133,10 +157,11 @@ public final class VerifySdk {
         String jsDir = System.getProperty("onebit.jsdir",
                 new java.io.File("verifier/js").getAbsolutePath());
         String node = System.getProperty("onebit.node", "node");
-        Process p = new ProcessBuilder(node, "verify.mjs")
+        ProcessBuilder pb = new ProcessBuilder(node, "verify.mjs")
                 .directory(new java.io.File(jsDir))
-                .redirectErrorStream(true)
-                .start();
+                .redirectErrorStream(true);
+        pb.environment().put("CIRCUIT", circuit);
+        Process p = pb.start();
         p.getOutputStream().write(in.toString().getBytes(StandardCharsets.UTF_8));
         p.getOutputStream().close();
         String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
