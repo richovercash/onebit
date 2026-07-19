@@ -9,17 +9,19 @@ circuit (mono_faithful for RSA-PKCS1, variants pending for PSS/ECDSA).
 
 | # | Country | Access | DSC alg | Hash | Key size | parse | PA | circuit |
 |---|---------|--------|---------|------|----------|-------|----|---------|
-| 1 | (first document) | PACE | ? | ? | ? | ✅ | ✅ | — (details uncaptured) |
-| 2 | **USA** | ? | ? (typ. RSA-2048 PKCS#1) | ? (typ. SHA-256) | ? | ✅ | ✅ | likely mono_faithful (RSA-PKCS1) |
+| 1 | (first document) | PACE | ? | ? | ? | ✅ | ✅ | — (recapture DSC on next tap) |
+| 2 | **USA** | — | RSA PKCS#1 v1.5 | SHA-256 | 2048 | ✅ | ✅ | ✅ **mono_faithful** (alg match) |
 
 ## Status
 
-- **2 documents read + passively authenticated offline** (≥1 country; need ≥3
-  and RSA-PKCS1 / RSA-PSS / ECDSA all represented for the exit criterion).
-- **DSC crypto details for both are uncaptured** — the `?` cells. Capturing the
-  actual DSC algorithm/hash/key-size needs a logcat read (the wallet parses the
-  DSC during PA; a debug line would surface `DSC.getSigAlgName()` +
-  `RSAPublicKey.getModulus().bitLength()`). Do this on the next tap of each doc.
+- **2 documents read + passively authenticated offline.** USA confirmed
+  **RSA-2048 PKCS#1v1.5 / SHA-256** — the majority algorithm, and exactly what
+  `mono_faithful` proves. So the US passport is algorithm-covered end to end
+  (parse + PA + circuit); what remains for a full ✅ on it is wiring the app to
+  extract the real SOD fields into the circuit witness (the `CmsProbe`
+  extraction logic, applied to the live SOD instead of a synthetic one).
+- Still need **RSA-PSS** and **ECDSA** documents to exercise those variants, and
+  a document #1 DSC recapture (tap it again — the app now logs `ONEBIT_COVERAGE`).
 - **circuit column**: `mono_faithful` proves RSA-2048 PKCS#1v1.5 / SHA-256 —
   the majority algorithm and the likely US case. PSS and ECDSA are separate
   compiled variants (P1.1 remaining), sharing the same shape.
