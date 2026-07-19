@@ -39,12 +39,28 @@ public final class PassiveAuth {
         public final String documentCode;
         public final String dateOfBirth;  // YYMMDD, resolve via Mrz
         public final String dateOfExpiry; // YYMMDD
+        public String dscInfo = "";       // DSC alg + key size, for coverage matrix
 
         MrzData(String documentCode, String dateOfBirth, String dateOfExpiry) {
             this.documentCode = documentCode;
             this.dateOfBirth = dateOfBirth;
             this.dateOfExpiry = dateOfExpiry;
         }
+    }
+
+    /** DSC algorithm + key size string, for the P1.1 coverage matrix. */
+    public static String dscInfo(X509Certificate dsc) {
+        String alg = dsc.getSigAlgName();
+        int bits = 0;
+        try {
+            java.security.PublicKey pk = dsc.getPublicKey();
+            if (pk instanceof java.security.interfaces.RSAPublicKey) {
+                bits = ((java.security.interfaces.RSAPublicKey) pk).getModulus().bitLength();
+            } else if (pk instanceof java.security.interfaces.ECPublicKey) {
+                bits = ((java.security.interfaces.ECPublicKey) pk).getParams().getCurve().getField().getFieldSize();
+            }
+        } catch (Exception ignored) { }
+        return dsc.getPublicKey().getAlgorithm() + "-" + bits + " / " + alg;
     }
 
     public static final class PAException extends Exception {
@@ -119,9 +135,11 @@ public final class PassiveAuth {
 
         try {
             DG1File dg1 = new DG1File(new ByteArrayInputStream(dg1Bytes));
-            return new MrzData(dg1.getMRZInfo().getDocumentCode(),
+            MrzData d = new MrzData(dg1.getMRZInfo().getDocumentCode(),
                                dg1.getMRZInfo().getDateOfBirth(),
                                dg1.getMRZInfo().getDateOfExpiry());
+            d.dscInfo = dscInfo(dsc);
+            return d;
         } catch (Exception e) {
             throw new PAException("DG1 unparseable", e);
         }

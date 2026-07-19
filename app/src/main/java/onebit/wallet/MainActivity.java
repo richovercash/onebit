@@ -321,8 +321,11 @@ public class MainActivity extends Activity {
                 PassiveAuth.MrzData d = PassiveAuth.verify(dg1, sod, masterList);
                 LocalDate t = LocalDate.now();
                 enroll(d, t);
+                android.util.Log.i("ONEBIT_COVERAGE", "DSC: " + d.dscInfo
+                        + " | docType=" + d.documentCode);
                 say("PASSIVE AUTHENTICATION OK — credential enrolled\n"
                         + "doc type: " + d.documentCode + "\n"
+                        + "DSC: " + d.dscInfo + "\n"
                         + "age ≥ 18: " + Mrz.ageGte(d.dateOfBirth, t, 18) + "\n"
                         + "not expired: " + Mrz.notExpired(d.dateOfExpiry, t));
             } catch (Exception e) {
