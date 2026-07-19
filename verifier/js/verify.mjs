@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const circuit = JSON.parse(readFileSync(join(here, 'mono_slim.json'), 'utf8'));
+const circuit = JSON.parse(readFileSync(join(here, 'mono_faithful.json'), 'utf8'));
 const input = JSON.parse(readFileSync(0, 'utf8'));
 
 const api = await Barretenberg.new({ backend: BackendType.WasmWorker, threads: 4 });

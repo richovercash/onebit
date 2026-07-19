@@ -37,7 +37,7 @@ final class Present {
 
     static final String RETURN_URL = "http://localhost:8317/present?r=";
     static final int PUB_COUNT = 5;      // ctx, current, age_min, N, dsc_root
-    static final int WIT_K = 424, WIT_CTX = 425, WIT_CUR = 426, WIT_AGE = 427;
+    static final String CIRCUIT = "zk/mono_faithful.json"; // real CMS passive auth
 
     private final Activity a;
     private final Consumer<String> say;
@@ -61,7 +61,8 @@ final class Present {
             return;
         }
         SharedPreferences cred = a.getSharedPreferences("cred", Context.MODE_PRIVATE);
-        if (!cred.contains("k")) {
+        java.io.File docWit = new java.io.File(a.getFilesDir(), "docwit.txt");
+        if (!cred.contains("k") || !docWit.exists()) {
             say.accept("No credential enrolled — read a document first.");
             return;
         }
@@ -80,7 +81,7 @@ final class Present {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
                 wl.acquire(120_000);
 
-                String circuit = readAsset("zk/mono_slim.json");
+                String circuit = readAsset(CIRCUIT);
                 String witness = buildWitness(cred, c);
                 long p0 = System.currentTimeMillis();
                 byte[] proofBytes = NativeProver.prove(circuit, witness, g1.getAbsolutePath(), false);
@@ -99,16 +100,19 @@ final class Present {
         }).start();
     }
 
-    /** doc witness (persisted) + per-presentation [k, ctx, current, age_min]. */
+    /** real persisted document witness (556 fields) + per-presentation
+     *  [k, ctx, current, age_min]. */
     private String buildWitness(SharedPreferences cred, Challenge c) throws Exception {
-        String[] w = readAsset("zk/wit_slim.txt").trim().split("\n");
+        String doc = new String(java.nio.file.Files.readAllBytes(
+                new java.io.File(a.getFilesDir(), "docwit.txt").toPath()),
+                StandardCharsets.UTF_8).trim();
         LocalDate today = LocalDate.now();
         int current = today.getYear() * 10000 + today.getMonthValue() * 100 + today.getDayOfMonth();
-        w[WIT_K] = cred.getString("k", "0");
-        w[WIT_CTX] = Nullifier.ctx(c.verifierId, c.epoch).toString();
-        w[WIT_CUR] = String.valueOf(current);
-        w[WIT_AGE] = String.valueOf(c.value);
-        return String.join("\n", w);
+        return doc + "\n"
+                + cred.getString("k", "0") + "\n"
+                + Nullifier.ctx(c.verifierId, c.epoch) + "\n"
+                + current + "\n"
+                + c.value + "\n";
     }
 
     private void signAndSend(Challenge c, byte[] proof, String nullifier, long proveMs, long t0) {
@@ -187,8 +191,8 @@ final class Present {
                 .put("attestation_chain", chain)
                 .put("mode", "A")
                 .put("tier", "A")
-                .put("circuit", "mono_slim")
-                .put("binding", "rsa-in-circuit") // real RSA PA in-circuit; faithful CMS + real merkle pending
+                .put("circuit", "mono_faithful")
+                .put("binding", "document") // real passport: faithful CMS PA in-circuit (merkle root still synthetic)
                 .toString();
     }
 

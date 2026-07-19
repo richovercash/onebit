@@ -321,13 +321,26 @@ public class MainActivity extends Activity {
                 PassiveAuth.MrzData d = PassiveAuth.verify(dg1, sod, masterList);
                 LocalDate t = LocalDate.now();
                 enroll(d, t);
+                try {
+                    onebit.core.Witness.Doc wd = onebit.core.Witness.extract(dg1, sod);
+                    android.util.Log.i("ONEBIT_COVERAGE", "sizes: eContent=" + wd.eContent.length
+                            + " signedAttrs=" + wd.signedAttrs.length + " modBits=" + wd.modulus.bitLength());
+                    // Persist the real document witness for mono_faithful proving
+                    // (SPEC §3.1.5: raw witness retained for monolithic proving).
+                    // ponytail: plain file for the demo; SE-wrap before shipping.
+                    java.util.List<String> docWit = onebit.core.Witness.monoFaithful(wd, 256, 128);
+                    java.nio.file.Files.write(
+                            new java.io.File(getFilesDir(), "docwit.txt").toPath(),
+                            String.join("\n", docWit).getBytes());
+                    say("PASSIVE AUTHENTICATION OK — real document witness stored\n"
+                            + "DSC: " + d.dscInfo + " · eContent " + wd.eContent.length + "B\n"
+                            + "age ≥ 18: " + Mrz.ageGte(d.dateOfBirth, t, 18)
+                            + " · not expired: " + Mrz.notExpired(d.dateOfExpiry, t));
+                } catch (Throwable ex) {
+                    android.util.Log.w("ONEBIT_COVERAGE", "witness: " + ex);
+                }
                 android.util.Log.i("ONEBIT_COVERAGE", "DSC: " + d.dscInfo
                         + " | docType=" + d.documentCode);
-                say("PASSIVE AUTHENTICATION OK — credential enrolled\n"
-                        + "doc type: " + d.documentCode + "\n"
-                        + "DSC: " + d.dscInfo + "\n"
-                        + "age ≥ 18: " + Mrz.ageGte(d.dateOfBirth, t, 18) + "\n"
-                        + "not expired: " + Mrz.notExpired(d.dateOfExpiry, t));
             } catch (Exception e) {
                 say("FAIL (closed): " + e);
             }
