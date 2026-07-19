@@ -71,7 +71,7 @@ public final class DemoServer {
                 }
                 long e2e = minted == null ? -1 : System.currentTimeMillis() - minted;
                 System.out.println((v.ok ? "GRANT" : "DENY ") + " e2e=" + e2e + "ms N="
-                        + v.nullifier + (v.ok ? "" : " reason=" + v.reason));
+                        + v.nullifier + " chain=[" + v.chain + "]" + (v.ok ? "" : " reason=" + v.reason));
                 verdictHtml = verdictPage(v, e2e);
             } catch (Exception e) {
                 VerifySdk.Verdict v = new VerifySdk.Verdict();
