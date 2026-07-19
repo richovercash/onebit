@@ -1,0 +1,2 @@
+{"ts":"2026-07-19T03:37:26.962Z","run_id":"RUN-2026-07-19T03-37-26-957Z","agent":{"type":"claude-code","version":"auto-tracked"},"type":"prompt_received","payload":{"prompt":"[Auto-tracked session via MCP tool calls]"}}
+{"ts":"2026-07-19T03:37:26.972Z","run_id":"RUN-2026-07-19T03-37-26-957Z","agent":{"type":"claude-code","version":"auto-tracked"},"type":"command_ran","payload":{"tool":"architect_createAdr","result":"success","summary":"Created ADR : ADR-005: CSCA→DSC trust is verified at enrollment, not per presentation"}}
