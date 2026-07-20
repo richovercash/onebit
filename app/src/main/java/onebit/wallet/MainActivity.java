@@ -192,8 +192,9 @@ public class MainActivity extends Activity {
                              java.util.List<java.security.cert.X509Certificate> masterList,
                              PassiveAuth.MrzData d) {
         try {
-            java.util.List<String> ew = onebit.core.Witness.enroll(dg1, sod, masterList);
-            if (ew == null) { say("Enrolled (DSC OK). CSCA is ECDSA — enroll proof needs that variant."); return; }
+            String tree = readAsset("zk/cscatree_rsa4096.json");
+            java.util.List<String> ew = onebit.core.Witness.enroll(dg1, sod, masterList, tree);
+            if (ew == null) { say("Enrolled (DSC OK). CSCA not in RSA≤4096 tree (ECDSA/6144) — needs that variant."); return; }
             java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
             if (!g1.exists()) { say("Enrolled. (SRS missing for enroll proof.)"); return; }
             android.os.PowerManager pm = getSystemService(android.os.PowerManager.class);

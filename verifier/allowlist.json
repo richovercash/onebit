@@ -10,5 +10,6 @@
   ],
   "min_patch_level": 202501,
   "require_user_auth": true,
-  "demo_allow_zk_stub": false
+  "demo_allow_zk_stub": false,
+  "csca_root_rsa4096": "0x26e9eb1ffb2b852974b8e922d8139420905fe31a4bb8086944d47c5115096e70"
 }

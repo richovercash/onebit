@@ -17,7 +17,7 @@ fn main(
     csca_sig: [u128; 35],      // CSCA signature over SHA256(dsc_tbs), RSA-4096
     csca_modulus: [u128; 35],
     csca_redc: [u128; 35],
-    merkle_path: [Field; 20],  // path of the CSCA leaf to the master-list root
+    merkle_path: [Field; 10],  // path of the CSCA leaf to the master-list root (2^10)
     merkle_dirs: u32,
     dsc_modulus: [u128; 18],   // the DSC's own RSA-2048 key, to commit
 ) -> pub (Field, Field) {      // (dsc_commit, computed master-list root)
@@ -33,7 +33,7 @@ fn main(
         csca_fields[i] = csca_modulus[i] as Field;
     }
     let mut node = Poseidon2::hash(csca_fields, 35);
-    for i in 0..20 {
+    for i in 0..10 {
         let dir = (merkle_dirs >> i) & 1;
         let l = if dir == 1 { merkle_path[i] } else { node };
         let r = if dir == 1 { node } else { merkle_path[i] };

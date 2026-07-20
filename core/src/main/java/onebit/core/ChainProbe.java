@@ -52,7 +52,7 @@ public final class ChainProbe {
         BigInteger P = new BigInteger(
                 "21888242871839275222246405745257275088548364400416034343698204186575808495617");
         StringBuilder path = new StringBuilder("[");
-        for (int i = 0; i < 20; i++) { if (i > 0) path.append(", "); path.append("\"").append(new BigInteger(250, rnd).mod(P)).append("\""); }
+        for (int i = 0; i < 10; i++) { if (i > 0) path.append(", "); path.append("\"").append(new BigInteger(250, rnd).mod(P)).append("\""); }
         path.append("]");
 
         String enroll =

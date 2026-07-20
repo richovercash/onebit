@@ -84,7 +84,8 @@ public final class Witness {
      *  null if the CSCA is not RSA (the RSA-4096 enroll variant can't prove it).
      *  Merkle path synthetic until the real CSCA tree lands. */
     public static List<String> enroll(byte[] dg1, byte[] sodBytes,
-                                      java.util.Collection<X509Certificate> masterList) throws Exception {
+                                      java.util.Collection<X509Certificate> masterList,
+                                      String treeJson) throws Exception {
         TLVInputStream tlv = new TLVInputStream(new ByteArrayInputStream(sodBytes));
         tlv.readTag(); tlv.readLength();
         CMSSignedData cms = new CMSSignedData(tlv.readValue());
@@ -109,17 +110,23 @@ public final class Witness {
         if (cscaN.bitLength() > 4096 || tbs.length > 2048)
             throw new IllegalStateException("CSCA " + cscaN.bitLength() + "bit / TBS " + tbs.length + "B exceeds enroll caps");
 
+        // Real Merkle path: look up this CSCA (by SPKI sha256) in the tree.
+        String spkiHex = hex(MessageDigest.getInstance("SHA-256").digest(csca.getPublicKey().getEncoded()));
+        com.google.gson.JsonObject tree = com.google.gson.JsonParser.parseString(treeJson).getAsJsonObject();
+        com.google.gson.JsonObject paths = tree.getAsJsonObject("paths");
+        if (!paths.has(spkiHex)) return null; // CSCA not in the RSA<=4096 tree (e.g. 6144/ECDSA)
+        com.google.gson.JsonObject entry = paths.getAsJsonObject(spkiHex);
+        int dirs = entry.get("dirs").getAsInt();
+        com.google.gson.JsonArray path = entry.getAsJsonArray("path");
+
         List<String> w = new ArrayList<>();
         bytes(w, pad(tbs, 2048));
         w.add(String.valueOf(tbs.length));
         limbsHex(w, cscaSig, 35);
         limbsHex(w, cscaN, 35);
         limbsHex(w, BigInteger.ONE.shiftLeft(2 * 4096 + 6).divide(cscaN), 35);
-        java.security.SecureRandom rnd = new java.security.SecureRandom();
-        BigInteger P = new BigInteger(
-                "21888242871839275222246405745257275088548364400416034343698204186575808495617");
-        for (int i = 0; i < 20; i++) w.add(new BigInteger(250, rnd).mod(P).toString());
-        w.add("349525"); // merkle_dirs
+        for (int i = 0; i < 10; i++) w.add(path.get(i).getAsString());
+        w.add(String.valueOf(dirs)); // merkle_dirs = leaf index
         limbsHex(w, dscN, 18);
         return w;
     }
@@ -127,6 +134,12 @@ public final class Witness {
     static void limbsHex(List<String> w, BigInteger x, int n) {
         BigInteger mask = BigInteger.ONE.shiftLeft(120).subtract(BigInteger.ONE);
         for (int i = 0; i < n; i++) w.add("0x" + x.shiftRight(120 * i).and(mask).toString(16));
+    }
+
+    static String hex(byte[] b) {
+        StringBuilder s = new StringBuilder();
+        for (byte x : b) s.append(Character.forDigit((x >> 4) & 0xf, 16)).append(Character.forDigit(x & 0xf, 16));
+        return s.toString();
     }
 
     static void bytes(List<String> w, byte[] b) { for (byte x : b) w.add(String.valueOf(x & 0xff)); }
