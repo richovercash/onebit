@@ -10,7 +10,7 @@ circuit (mono_faithful for RSA-PKCS1, variants pending for PSS/ECDSA).
 | # | Country | Access | DSC alg | Hash | Key size | parse | PA | circuit |
 |---|---------|--------|---------|------|----------|-------|----|---------|
 | 1 | (first document) | PACE | ? | ? | ? | ✅ | ✅ | — (recapture DSC on next tap) |
-| 2 | **USA** | — | RSA PKCS#1 v1.5 | SHA-256 | DSC 2048, CSCA 4096 | ✅ | ✅ | ✅ **full CSCA→DSC→SOD chain, dual-proof, live** |
+| 2 | **USA** | — | RSA PKCS#1 v1.5 | SHA-256 | DSC 2048, CSCA 4096 | ✅ | ✅ | ✅ **fully-real chain: published-root→CSCA→DSC→SOD, all ZK, live** |
 
 ## Status
 
