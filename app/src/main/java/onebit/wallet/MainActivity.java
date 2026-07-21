@@ -82,8 +82,16 @@ public class MainActivity extends Activity {
 
         android.widget.Button nativeBtn = new android.widget.Button(this);
         nativeBtn.setText("Native prove (slim circuit, JNI)");
-        nativeBtn.setOnClickListener(v -> nativeProveTest());
+        nativeBtn.setOnClickListener(v -> nativeProveTest("zk/mono_slim.json", "zk/wit_slim.txt", "slim"));
         root.addView(nativeBtn);
+
+        // P1.0 spike: native (multi-threaded) recursive Circuit P v1 prove-time.
+        // The WASM WebView bench (below) fell back to single-thread (~93s on P6P);
+        // this is the number that actually matters for presentations.
+        android.widget.Button pBtn = new android.widget.Button(this);
+        pBtn.setText("Native prove (Circuit P v1 recursion, 775k)");
+        pBtn.setOnClickListener(v -> nativeProveTest("zk/circuit_p.json", "zk/wit_p.txt", "recursion-775k"));
+        root.addView(pBtn);
 
         addBench(root, "Benchmark: recursion (Circuit P v1, 775k)",
                 "c=circuit_p_v1.json&i=bench_p_inputs.json&l=recursion-775k");
@@ -127,7 +135,7 @@ public class MainActivity extends Activity {
 
     /** JNI native-proving test: loads libonebitprover.so and proves the slim
      *  circuit. g1.dat must be pushed to the app files dir first. */
-    private void nativeProveTest() {
+    private void nativeProveTest(String circuitAsset, String witAsset, String label) {
         final String TAG = "ONEBIT_NATIVE";
         if (NativeProver.loadError != null) {
             android.util.Log.e(TAG, "LOAD FAILED", NativeProver.loadError);
@@ -135,7 +143,7 @@ public class MainActivity extends Activity {
             return;
         }
         android.util.Log.i(TAG, "lib loaded OK");
-        say("Native lib loaded OK. Proving slim circuit…");
+        say("Native lib loaded OK. Proving " + label + " (native, multi-threaded)…");
         new Thread(() -> {
             android.os.PowerManager pm = getSystemService(android.os.PowerManager.class);
             android.os.PowerManager.WakeLock wl = pm.newWakeLock(
@@ -143,19 +151,19 @@ public class MainActivity extends Activity {
             try {
                 // Keep CPU at full clocks during proving (screen may be off).
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
-                wl.acquire(120_000);
-                String circuit = readAsset("zk/mono_slim.json");
-                String witness = readAsset("zk/wit_slim.txt");
+                wl.acquire(600_000);
+                String circuit = readAsset(circuitAsset);
+                String witness = readAsset(witAsset);
                 java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
-                if (!g1.exists()) { android.util.Log.e(TAG, "missing g1 " + g1); return; }
+                if (!g1.exists()) { say("missing SRS g1_big.dat"); return; }
                 long t0 = System.currentTimeMillis();
                 byte[] proof = NativeProver.prove(circuit, witness, g1.getAbsolutePath(), false);
-                android.util.Log.i(TAG, "PROVE OK " + (System.currentTimeMillis() - t0)
-                        + " ms, proof " + proof.length + " bytes");
-                say("NATIVE PROVE OK in " + (System.currentTimeMillis() - t0) + " ms");
+                long ms = System.currentTimeMillis() - t0;
+                android.util.Log.i(TAG, "PROVE OK [" + label + "] " + ms + " ms, proof " + proof.length + " B");
+                say("NATIVE PROVE [" + label + "] OK in " + ms + " ms (proof " + proof.length + " B)");
             } catch (Throwable t) {
                 android.util.Log.e(TAG, "PROVE FAIL", t);
-                say("Native prove FAIL: " + t);
+                say("Native prove [" + label + "] FAIL: " + t);
             } finally {
                 if (wl.isHeld()) wl.release();
             }
