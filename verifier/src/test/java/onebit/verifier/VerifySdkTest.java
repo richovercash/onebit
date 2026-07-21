@@ -41,7 +41,7 @@ public class VerifySdkTest {
         {"v":1,"nonce":"%s","origin":"%s","verifier_id":"%s","epoch":"%s",
          "policy":{"predicate":"age_gte","value":18,"icao_root_min_version":1,
            "attestation":{"allowlist_url":"https://x","allowlist_hash":"h","tier":"A"},
-           "mode_b_accepted":false},"sig":"c2ln"}"""
+           "mode_b_accepted":false},"sig":"c2ln","spki":"c2ln"}"""
                 .formatted(Base64.getEncoder().encodeToString(NONCE), ORIGIN, VID, EPOCH);
     }
 

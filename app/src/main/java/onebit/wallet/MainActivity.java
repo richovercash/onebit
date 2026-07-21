@@ -206,7 +206,7 @@ public class MainActivity extends Activity {
                 String circuit = readAsset("zk/enroll.json");
                 long e0 = System.currentTimeMillis();
                 byte[] proof = NativeProver.prove(circuit, String.join("\n", ew), g1.getAbsolutePath(), false);
-                java.nio.file.Files.write(new java.io.File(getFilesDir(), "enrollproof.bin").toPath(), proof);
+                Seal.writeFile(new java.io.File(getFilesDir(), "enrollproof.bin").toPath(), proof);
                 say("ENROLLED — CSCA→DSC proven in " + (System.currentTimeMillis() - e0) + " ms.\n"
                         + "DSC: " + d.dscInfo + " · full chain ready.");
             } finally { if (wl.isHeld()) wl.release(); }
@@ -216,17 +216,19 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Persist credential attributes (SPEC §3.1.5).
-     *  ponytail: app-private prefs for the demo; SE-wrap with auth-gated AES
-     *  key before anything ships. */
-    private void enroll(PassiveAuth.MrzData d, java.time.LocalDate t) {
+    /** Persist credential attributes (SPEC §3.1.5). The nullifier key `k` is
+     *  SE-wrapped (P1.5) — it's the secret behind N; a lifted plaintext `k`
+     *  would let a custom prover mint arbitrary nullifiers (self-review F2). */
+    private void enroll(PassiveAuth.MrzData d, java.time.LocalDate t) throws Exception {
         java.math.BigInteger k = new java.math.BigInteger(250, new java.security.SecureRandom());
         java.time.LocalDate dob = Mrz.resolve(d.dateOfBirth, t);
         java.time.LocalDate exp = Mrz.resolve(d.dateOfExpiry, t);
+        String kSealed = android.util.Base64.encodeToString(
+                Seal.wrap(k.toString().getBytes()), android.util.Base64.NO_WRAP);
         getSharedPreferences("cred", MODE_PRIVATE).edit()
                 .putInt("dob", dob.getYear() * 10000 + dob.getMonthValue() * 100 + dob.getDayOfMonth())
                 .putInt("exp", exp.getYear() * 10000 + exp.getMonthValue() * 100 + exp.getDayOfMonth())
-                .putString("k", k.toString())
+                .putString("k", kSealed)
                 .apply();
     }
 
@@ -356,10 +358,10 @@ public class MainActivity extends Activity {
                     android.util.Log.i("ONEBIT_COVERAGE", "sizes: eContent=" + wd.eContent.length
                             + " signedAttrs=" + wd.signedAttrs.length + " modBits=" + wd.modulus.bitLength());
                     // Persist the real document witness for mono_faithful proving
-                    // (SPEC §3.1.5: raw witness retained for monolithic proving).
-                    // ponytail: plain file for the demo; SE-wrap before shipping.
+                    // (SPEC §3.1.5: raw witness retained for monolithic proving),
+                    // SE-wrapped (P1.5) so it can't be lifted off-device.
                     java.util.List<String> docWit = onebit.core.Witness.monoFaithful(wd, 256, 128);
-                    java.nio.file.Files.write(
+                    Seal.writeFile(
                             new java.io.File(getFilesDir(), "docwit.txt").toPath(),
                             String.join("\n", docWit).getBytes());
                     say("PASSIVE AUTHENTICATION OK — proving CSCA→DSC (enroll, ~10s)…");

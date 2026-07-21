@@ -56,6 +56,10 @@ final class Present {
             say.accept("REFUSED (V5): " + e.getMessage());
             return;
         }
+        if (!c.verifySig()) {
+            say.accept("REFUSED (V5): verifier signature invalid — challenge not authentic.");
+            return;
+        }
         if (NativeProver.loadError != null) {
             say.accept("Native prover unavailable: " + NativeProver.loadError);
             return;
@@ -103,13 +107,15 @@ final class Present {
     /** real persisted document witness (556 fields) + per-presentation
      *  [k, ctx, current, age_min]. */
     private String buildWitness(SharedPreferences cred, Challenge c) throws Exception {
-        String doc = new String(java.nio.file.Files.readAllBytes(
+        String doc = new String(Seal.readFile(
                 new java.io.File(a.getFilesDir(), "docwit.txt").toPath()),
                 StandardCharsets.UTF_8).trim();
+        String k = new String(Seal.unwrap(Base64.decode(
+                cred.getString("k", ""), Base64.NO_WRAP)), StandardCharsets.UTF_8);
         LocalDate today = LocalDate.now();
         int current = today.getYear() * 10000 + today.getMonthValue() * 100 + today.getDayOfMonth();
         return doc + "\n"
-                + cred.getString("k", "0") + "\n"
+                + k + "\n"
                 + Nullifier.ctx(c.verifierId, c.epoch) + "\n"
                 + current + "\n"
                 + c.value + "\n";
@@ -202,7 +208,7 @@ final class Present {
     /** persisted enroll proof (base64), or "" if none. */
     private String enrollProofB64() {
         try {
-            byte[] p = java.nio.file.Files.readAllBytes(
+            byte[] p = Seal.readFile(
                     new java.io.File(a.getFilesDir(), "enrollproof.bin").toPath());
             return Base64.encodeToString(p, Base64.NO_WRAP);
         } catch (Exception e) { return ""; }

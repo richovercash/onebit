@@ -36,15 +36,19 @@ distinct nullifiers from one document → defeats the epoch rate-limit and the
 "proof farm" mitigation (SPEC §7) **at the circuit level**.
 
 Today this rests on: the attested wallet uses the SE-sealed `k` (fixed per
-credential), and device attestation (T3) gates the honest wallet. But the
-persisted witness is **not yet SE-wrapped** (P1.5), so extracting it and running
-a custom prover with varying `k` is currently feasible.
+credential), and device attestation (T3) gates the honest wallet.
 
-**Mitigations:** (a) P1.5 SE-wrap of `docwit.txt` / credential — near-term,
-raises the bar to SE compromise; (b) bind `k` in-circuit — re-introduce a
-per-document commitment `C = Poseidon(dob, expiry, docHash, k, salt)` (as the
-SPEC specifies) and prove the presentation's `k` matches the enrolled `C`. (b)
-is the real fix; (a) is the interim. Tracked for the next circuit pass.
+**Mitigations:** (a) **DONE (P1.5)** — the persisted `docwit.txt`,
+`enrollproof.bin`, and the nullifier key `k` are now SE-wrapped (AES-256-GCM,
+non-exportable AndroidKeyStore/StrongBox key; see `app/.../Seal.java`). Lifting
+the files off-device no longer yields the witness or `k`, so the "extract +
+custom prover with varying `k`" attack now requires SE compromise. (b) the real
+fix — bind `k` in-circuit: re-introduce a per-document commitment
+`C = Poseidon(dob, expiry, docHash, k, salt)` (as the SPEC specifies) and prove
+the presentation's `k` matches the enrolled `C`. (a) is the shipped interim; (b)
+is tracked for the next circuit pass. Residual gap for (a): the seal key is not
+per-use auth-gated, so on-device malware can still ask the SE to decrypt —
+noted as the upgrade path in `Seal.java`.
 
 ## Notes (accepted / documented, not bugs)
 

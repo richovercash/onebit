@@ -106,10 +106,15 @@ public final class DemoServer {
             c.addProperty("verifier_id", verifierId);
             c.addProperty("epoch", LocalDate.now().toString());
             c.add("policy", policy);
+            // Sign the canonical tuple (shared with the wallet), not the JSON text,
+            // and publish the SPKI so the wallet can anchor sig to verifier_id.
+            String signed = onebit.core.Challenge.signedContent(nonceB64, ORIGIN, verifierId,
+                    LocalDate.now().toString(), "age_gte", 18, 1, "A", false);
             Signature sig = Signature.getInstance("SHA256withECDSA");
             sig.initSign(verifierKey.getPrivate());
-            sig.update(c.toString().getBytes(StandardCharsets.UTF_8));
+            sig.update(signed.getBytes(StandardCharsets.UTF_8));
             c.addProperty("sig", Base64.getEncoder().encodeToString(sig.sign()));
+            c.addProperty("spki", Base64.getEncoder().encodeToString(verifierKey.getPublic().getEncoded()));
             String json = c.toString();
             pendingNonces.put(nonceB64, json);
             nonceMintedAt.put(nonceB64, System.currentTimeMillis());

@@ -31,6 +31,7 @@ public final class Challenge {
     public final String attestationTier;
     public final boolean modeBAccepted;
     public final String sig;
+    public final byte[] spki;   // verifier's SubjectPublicKeyInfo (DER); sha256 == verifier_id
 
     public static final class RefusalException extends Exception {
         public RefusalException(String why) { super(why); }
@@ -43,7 +44,7 @@ public final class Challenge {
         } catch (Exception e) {
             throw new RefusalException("not a JSON object");
         }
-        requireKeys(o, Set.of("v", "nonce", "origin", "verifier_id", "epoch", "policy", "sig"), "top-level");
+        requireKeys(o, Set.of("v", "nonce", "origin", "verifier_id", "epoch", "policy", "sig", "spki"), "top-level");
         if (asInt(o, "v") != 1) throw new RefusalException("unsupported version");
 
         byte[] nonce;
@@ -90,8 +91,15 @@ public final class Challenge {
             throw new RefusalException("mode_b_accepted must be boolean");
         }
 
+        byte[] spki;
+        try {
+            spki = Base64.getDecoder().decode(asString(o, "spki"));
+        } catch (IllegalArgumentException e) {
+            throw new RefusalException("spki not base64");
+        }
+
         Challenge c = new Challenge(nonce, origin, verifierId, epoch, predicate, value,
-                minRoot, tier, mb.getAsBoolean(), asString(o, "sig"));
+                minRoot, tier, mb.getAsBoolean(), asString(o, "sig"), spki);
         return c;
     }
 
@@ -138,9 +146,50 @@ public final class Challenge {
         return e.getAsJsonObject();
     }
 
+    /** Canonical bytes the verifier signs and the wallet re-derives — every
+     *  security-relevant field, so nothing is malleable. Static so both the
+     *  verifier (mint) and the wallet (check) compute it identically without
+     *  depending on JSON key order. */
+    public static String signedContent(String nonceB64, String origin, String verifierId,
+            String epoch, String predicate, int value, int icaoRootMinVersion,
+            String attestationTier, boolean modeBAccepted) {
+        return "onebit-challenge-v1\n" + nonceB64 + "\n" + origin + "\n" + verifierId + "\n"
+                + epoch + "\n" + predicate + "\n" + value + "\n" + icaoRootMinVersion + "\n"
+                + attestationTier + "\n" + modeBAccepted;
+    }
+
+    public String signedContent() {
+        return signedContent(java.util.Base64.getEncoder().encodeToString(nonce), origin,
+                verifierId, epoch, predicate, value, icaoRootMinVersion, attestationTier,
+                modeBAccepted);
+    }
+
+    /** Wallet-side authenticity check (V5, fail-closed): the challenge's `sig`
+     *  must be a valid ECDSA signature, by the key whose SPKI-sha256 equals
+     *  `verifier_id`, over signedContent(). The verifier_id is the trust anchor
+     *  (holder trusts the origin↔verifier_id binding); this proves the challenge
+     *  really came from that verifier and wasn't altered in transit. */
+    public boolean verifySig() {
+        try {
+            byte[] h = java.security.MessageDigest.getInstance("SHA-256").digest(spki);
+            StringBuilder hex = new StringBuilder(64);
+            for (byte b : h) hex.append(Character.forDigit((b >> 4) & 0xf, 16))
+                                .append(Character.forDigit(b & 0xf, 16));
+            if (!hex.toString().equals(verifierId)) return false;   // key isn't the claimed verifier
+            java.security.PublicKey pk = java.security.KeyFactory.getInstance("EC")
+                    .generatePublic(new java.security.spec.X509EncodedKeySpec(spki));
+            java.security.Signature s = java.security.Signature.getInstance("SHA256withECDSA");
+            s.initVerify(pk);
+            s.update(signedContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return s.verify(java.util.Base64.getDecoder().decode(sig));
+        } catch (Exception e) {
+            return false;   // malformed key/sig → treat as invalid
+        }
+    }
+
     private Challenge(byte[] nonce, String origin, String verifierId, String epoch,
                       String predicate, int value, int icaoRootMinVersion,
-                      String attestationTier, boolean modeBAccepted, String sig) {
+                      String attestationTier, boolean modeBAccepted, String sig, byte[] spki) {
         this.nonce = nonce;
         this.origin = origin;
         this.verifierId = verifierId;
@@ -151,5 +200,6 @@ public final class Challenge {
         this.attestationTier = attestationTier;
         this.modeBAccepted = modeBAccepted;
         this.sig = sig;
+        this.spki = spki;
     }
 }

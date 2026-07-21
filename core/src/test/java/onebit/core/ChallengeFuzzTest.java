@@ -32,7 +32,8 @@ public class ChallengeFuzzTest {
             "attestation": {"allowlist_url": "https://x/al.json", "allowlist_hash": "ab", "tier": "A"},
             "mode_b_accepted": false
           },
-          "sig": "c2ln"
+          "sig": "c2ln",
+          "spki": "c2ln"
         }""".formatted(java.util.Base64.getEncoder().encodeToString(new byte[32]), "ab".repeat(32));
     }
 
