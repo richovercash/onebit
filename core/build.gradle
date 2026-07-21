@@ -42,3 +42,9 @@ tasks.register('spkiCheck', JavaExec) {
     args project.rootDir.path + '/app/src/main/assets/masterlist/masterlist.pem',
         project.rootDir.path + '/app/src/main/assets/zk/cscatree_rsa4096.json'
 }
+
+tasks.register('ecdsaProbe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.EcdsaProbe'
+    systemProperty 'dir', project.rootDir.path + '/circuits/enroll_ecdsa'
+}

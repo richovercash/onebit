@@ -34,3 +34,17 @@ circuit (mono_faithful for RSA-PKCS1, variants pending for PSS/ECDSA).
 - A **SHA-1-era legacy** document near end of validity — **time-critical**,
   those expire within ~12 months; read any specimen on sight.
 - **RSA-4096** CSCA / DSC — larger bignum params.
+
+## CSCA circuit variants (enrollment)
+
+The enrollment circuit verifies the CSCA→DSC signature; the CSCA key-type
+distribution (588 CSCAs) drives the variants:
+
+| CSCA key | Count | Enroll circuit | Status |
+|----------|-------|----------------|--------|
+| RSA ≤4096 (2048/3072/4096) | ~418 | `enroll` (RSA-4096, 35-limb) | ✅ live (US passport) |
+| **brainpoolP256r1 ECDSA** | 160 | `enroll_ecdsa` (249k gates) | ✅ built + verifies (needs EU doc to test live) |
+| RSA-6144 | 6 | (RSA-6144 variant) | pending |
+| P-384 ECDSA | 4 | (P-384 variant) | pending |
+
+One RSA≤4096 variant + one brainpoolP256r1 variant cover ~578/588 CSCAs.
