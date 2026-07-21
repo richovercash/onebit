@@ -22,4 +22,14 @@ for c in mono_faithful enroll enroll_ecdsa present_amortized; do
       && echo "  ok: $c" ) || { echo "  FAIL: $c"; exit 1; }
 done
 
+echo "== Amortized presentation: real proof verifies via the verifier sidecar =="
+if command -v node >/dev/null 2>&1 && [ -f verifier/js/testdata/pa_proof.bin ]; then
+  python3 scripts/split_proof.py verifier/js/testdata/pa_proof.bin 4 \
+    | ( cd verifier/js && CIRCUIT=present_amortized.json node verify.mjs ) \
+    | grep -q ZK_OK && echo "  ok: present_amortized proof -> ZK_OK" \
+    || { echo "  FAIL: amortized proof did not verify"; exit 1; }
+else
+  echo "  skip: node or fixture unavailable"
+fi
+
 echo "ALL GREEN"

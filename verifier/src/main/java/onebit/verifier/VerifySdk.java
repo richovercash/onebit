@@ -48,9 +48,17 @@ public final class VerifySdk {
             String expectedCtx = Nullifier.ctx(c.verifierId, c.epoch).toString();
             if (!expectedCtx.equals(pi.get("ctx").getAsString())) throw new IllegalStateException("ctx mismatch");
 
-            // 2. ZK proof (mono_slim, native). proofBytes = [public_inputs
-            //    (5*32B)][proof]; public inputs = [ctx, current, age_min, N,
-            //    dsc_root]. Semantic checks against OUR challenge, then bb.js.
+            // 2. ZK proof (native). Two presentation circuits are accepted:
+            //  - mono_faithful: 5 pub [ctx,current,age_min,N,dsc_root] + a separate
+            //    enroll proof -> full CSCA->DSC->SOD chain proven in ZK.
+            //  - present_amortized (Tier A): 4 pub [ctx,current,age_min,N]. Document
+            //    provenance was established once at enrollment and is attested (T3),
+            //    not re-proven per presentation. See docs/amortized-enrollment.md.
+            String circuit = r.has("circuit") ? r.get("circuit").getAsString() : "mono_faithful";
+            boolean amortized = "present_amortized".equals(circuit);
+            int pubCount = amortized ? 4 : 5;
+            String circuitJson = amortized ? "present_amortized.json" : "mono_faithful.json";
+
             byte[] proofBytes = Base64.getDecoder().decode(r.get("proof").getAsString());
             String proofStr = new String(proofBytes, 0, Math.min(4, proofBytes.length), StandardCharsets.UTF_8);
             if (proofStr.startsWith("STUB")) {
@@ -61,8 +69,8 @@ public final class VerifySdk {
             } else {
                 // noir-rs format: [uint32 num_public][public_inputs][proof].
                 final int PRE = 4;
-                java.math.BigInteger[] pub = new java.math.BigInteger[5];
-                for (int i = 0; i < 5; i++) {
+                java.math.BigInteger[] pub = new java.math.BigInteger[pubCount];
+                for (int i = 0; i < pubCount; i++) {
                     pub[i] = new java.math.BigInteger(1,
                             java.util.Arrays.copyOfRange(proofBytes, PRE + i * 32, PRE + i * 32 + 32));
                 }
@@ -80,36 +88,41 @@ public final class VerifySdk {
                 if (!pub[3].toString().equals(pi.get("N").getAsString())) {
                     throw new IllegalStateException("N != zk output");
                 }
-                if (!zkVerify(proofBytes, 5, "mono_faithful.json")) {
+                if (!zkVerify(proofBytes, pubCount, circuitJson)) {
                     throw new IllegalStateException("ZK proof invalid");
                 }
-                // Dual-proof: verify the enrollment proof (CSCA->DSC) and check
-                // it commits the SAME DSC as this presentation (pub[4]). ADR-005.
-                String enrollB64 = r.has("enroll_proof") ? r.get("enroll_proof").getAsString() : "";
-                if (enrollB64.isEmpty()) {
-                    v.chain = "DSC->SOD only (no enroll proof; CSCA->DSC attestation-backed)";
+                if (amortized) {
+                    // Provenance is not in this proof; attestation (step 3) carries it.
+                    v.chain = "predicate over enrolled commitment (Tier A: provenance attested at enrollment)";
                 } else {
-                    byte[] eb = Base64.getDecoder().decode(enrollB64);
-                    // enroll public inputs: [dsc_commit, root] after the 4-byte prefix
-                    java.math.BigInteger eDscCommit = new java.math.BigInteger(1,
-                            java.util.Arrays.copyOfRange(eb, 4, 36));
-                    java.math.BigInteger eRoot = new java.math.BigInteger(1,
-                            java.util.Arrays.copyOfRange(eb, 36, 68));
-                    if (!eDscCommit.equals(pub[4])) {
-                        throw new IllegalStateException("enroll dsc_commit != presentation dsc_commit");
-                    }
-                    if (!zkVerify(eb, 2, "enroll.json")) {
-                        throw new IllegalStateException("enrollment proof invalid");
-                    }
-                    // The CSCA is in the PUBLISHED master-list tree (real root).
-                    if (allowlist.has("csca_root_rsa4096")) {
-                        java.math.BigInteger published = new java.math.BigInteger(
-                                allowlist.get("csca_root_rsa4096").getAsString().substring(2), 16);
-                        if (!eRoot.equals(published)) {
-                            throw new IllegalStateException("CSCA not in published master-list tree");
+                    // Dual-proof: verify the enrollment proof (CSCA->DSC) and check
+                    // it commits the SAME DSC as this presentation (pub[4]). ADR-005.
+                    String enrollB64 = r.has("enroll_proof") ? r.get("enroll_proof").getAsString() : "";
+                    if (enrollB64.isEmpty()) {
+                        v.chain = "DSC->SOD only (no enroll proof; CSCA->DSC attestation-backed)";
+                    } else {
+                        byte[] eb = Base64.getDecoder().decode(enrollB64);
+                        // enroll public inputs: [dsc_commit, root] after the 4-byte prefix
+                        java.math.BigInteger eDscCommit = new java.math.BigInteger(1,
+                                java.util.Arrays.copyOfRange(eb, 4, 36));
+                        java.math.BigInteger eRoot = new java.math.BigInteger(1,
+                                java.util.Arrays.copyOfRange(eb, 36, 68));
+                        if (!eDscCommit.equals(pub[4])) {
+                            throw new IllegalStateException("enroll dsc_commit != presentation dsc_commit");
                         }
+                        if (!zkVerify(eb, 2, "enroll.json")) {
+                            throw new IllegalStateException("enrollment proof invalid");
+                        }
+                        // The CSCA is in the PUBLISHED master-list tree (real root).
+                        if (allowlist.has("csca_root_rsa4096")) {
+                            java.math.BigInteger published = new java.math.BigInteger(
+                                    allowlist.get("csca_root_rsa4096").getAsString().substring(2), 16);
+                            if (!eRoot.equals(published)) {
+                                throw new IllegalStateException("CSCA not in published master-list tree");
+                            }
+                        }
+                        v.chain = "CSCA(in master list)->DSC->SOD, fully verified in ZK";
                     }
-                    v.chain = "CSCA(in master list)->DSC->SOD, fully verified in ZK";
                 }
             }
             byte[] proof = proofBytes;

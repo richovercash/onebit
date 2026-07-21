@@ -41,6 +41,7 @@ final class Present {
 
     private final Activity a;
     private final Consumer<String> say;
+    private boolean amortized;   // Tier A fast path: acred.bin enrolled
 
     Present(Activity a, Consumer<String> say) {
         this.a = a;
@@ -65,8 +66,11 @@ final class Present {
             return;
         }
         SharedPreferences cred = a.getSharedPreferences("cred", Context.MODE_PRIVATE);
+        // Prefer the amortized Tier A path (~0.8s) if its credential is enrolled;
+        // fall back to the faithful mono path (~2.5s, full CMS passive auth).
+        amortized = new java.io.File(a.getFilesDir(), "acred.bin").exists();
         java.io.File docWit = new java.io.File(a.getFilesDir(), "docwit.txt");
-        if (!cred.contains("k") || !docWit.exists()) {
+        if (!amortized && (!cred.contains("k") || !docWit.exists())) {
             say.accept("No credential enrolled — read a document first.");
             return;
         }
@@ -75,7 +79,8 @@ final class Present {
             say.accept("Missing SRS (g1_big.dat) in app files dir.");
             return;
         }
-        say.accept(c.display() + "\nProving (native, ~2.5s foreground)…");
+        say.accept(c.display() + (amortized ? "\nProving (amortized, ~0.8s)…"
+                : "\nProving (native, ~2.5s foreground)…"));
 
         new Thread(() -> {
             android.os.PowerManager pm = a.getSystemService(android.os.PowerManager.class);
@@ -85,8 +90,8 @@ final class Present {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
                 wl.acquire(120_000);
 
-                String circuit = readAsset(CIRCUIT);
-                String witness = buildWitness(cred, c);
+                String circuit = readAsset(amortized ? "zk/present_amortized.json" : CIRCUIT);
+                String witness = amortized ? buildAmortizedWitness(c) : buildWitness(cred, c);
                 long p0 = System.currentTimeMillis();
                 byte[] proofBytes = NativeProver.prove(circuit, witness, g1.getAbsolutePath(), false);
                 long proveMs = System.currentTimeMillis() - p0;
@@ -116,6 +121,22 @@ final class Present {
         int current = today.getYear() * 10000 + today.getMonthValue() * 100 + today.getDayOfMonth();
         return doc + "\n"
                 + k + "\n"
+                + Nullifier.ctx(c.verifierId, c.epoch) + "\n"
+                + current + "\n"
+                + c.value + "\n";
+    }
+
+    /** Amortized presentation witness: the 6 sealed credential fields
+     *  (dob, expiry, doc_hash, k, salt, C) + per-challenge [ctx, current,
+     *  age_min], in present_amortized's declaration order. */
+    private String buildAmortizedWitness(Challenge c) throws Exception {
+        // acred.bin = dob\nexpiry\ndoc_hash\nk\nsalt\nC (all decimal), SE-wrapped.
+        String cred = new String(Seal.readFile(
+                new java.io.File(a.getFilesDir(), "acred.bin").toPath()),
+                StandardCharsets.UTF_8).trim();
+        LocalDate today = LocalDate.now();
+        int current = today.getYear() * 10000 + today.getMonthValue() * 100 + today.getDayOfMonth();
+        return cred + "\n"
                 + Nullifier.ctx(c.verifierId, c.epoch) + "\n"
                 + current + "\n"
                 + c.value + "\n";
@@ -197,9 +218,11 @@ final class Present {
                 .put("attestation_chain", chain)
                 .put("mode", "A")
                 .put("tier", "A")
-                .put("circuit", "mono_faithful")
-                .put("enroll_proof", enrollProofB64())
-                .put("binding", "document") // real passport: faithful CMS PA in-circuit (merkle root still synthetic)
+                .put("circuit", amortized ? "present_amortized" : "mono_faithful")
+                // Amortized: provenance established at enrollment + attested (T3);
+                // no per-presentation enroll proof. Faithful: dual-proof chain.
+                .put("enroll_proof", amortized ? "" : enrollProofB64())
+                .put("binding", amortized ? "attested-enrollment" : "document")
                 .toString();
     }
 

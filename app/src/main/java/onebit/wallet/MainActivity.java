@@ -224,6 +224,53 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Amortized Tier A enrollment: run the `commit` circuit to compute
+     *  (C, doc_hash) exactly as Circuit E does, then SE-seal the 6 credential
+     *  fields (dob, expiry, doc_hash, k, salt, C) that present_amortized reopens.
+     *  One-time; provenance is carried by passive auth (already verified) +
+     *  attestation, so no per-presentation recursion. */
+    private void enrollAmortized(byte[] dg1, onebit.core.Witness.Doc wd,
+                                 PassiveAuth.MrzData d, java.time.LocalDate t) {
+        try {
+            java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
+            if (!g1.exists()) { say("Amortized enroll skipped (SRS missing)."); return; }
+            java.time.LocalDate dob = Mrz.resolve(d.dateOfBirth, t);
+            java.time.LocalDate exp = Mrz.resolve(d.dateOfExpiry, t);
+            int dobI = dob.getYear() * 10000 + dob.getMonthValue() * 100 + dob.getDayOfMonth();
+            int expI = exp.getYear() * 10000 + exp.getMonthValue() * 100 + exp.getDayOfMonth();
+            int enrollDate = t.getYear() * 10000 + t.getMonthValue() * 100 + t.getDayOfMonth();
+            java.math.BigInteger k = new java.math.BigInteger(250, new java.security.SecureRandom());
+            java.math.BigInteger salt = new java.math.BigInteger(250, new java.security.SecureRandom());
+
+            // commit witness: dg1[93], econtent[1200], k, salt, enroll_date.
+            StringBuilder w = new StringBuilder();
+            for (byte b : dg1) w.append(b & 0xff).append('\n');
+            byte[] econ = new byte[1200];
+            System.arraycopy(wd.eContent, 0, econ, 0, Math.min(wd.eContent.length, 1200));
+            for (byte b : econ) w.append(b & 0xff).append('\n');
+            w.append(k).append('\n').append(salt).append('\n').append(enrollDate);
+
+            byte[] proof = NativeProver.prove(readAsset("zk/commit.json"), w.toString(),
+                    g1.getAbsolutePath(), false);
+            String cField = pubField(proof, 0);   // C
+            String docHash = pubField(proof, 1);   // doc_hash
+            String blob = dobI + "\n" + expI + "\n" + docHash + "\n" + k + "\n" + salt + "\n" + cField;
+            Seal.writeFile(new java.io.File(getFilesDir(), "acred.bin").toPath(), blob.getBytes());
+            say("Amortized credential enrolled — presentations now ~0.8s.");
+        } catch (Throwable ex) {
+            android.util.Log.w("ONEBIT_ACRED", "amortized enroll: " + ex);
+            say("Amortized enroll skipped: " + ex);
+        }
+    }
+
+    /** Read public input #idx (decimal) from a noir-rs proof
+     *  [uint32 num_public][pub][proof]. */
+    static String pubField(byte[] proof, int idx) {
+        int off = 4 + idx * 32;
+        return new java.math.BigInteger(1,
+                java.util.Arrays.copyOfRange(proof, off, off + 32)).toString();
+    }
+
     /** Persist credential attributes (SPEC §3.1.5). The nullifier key `k` is
      *  SE-wrapped (P1.5) — it's the secret behind N; a lifted plaintext `k`
      *  would let a custom prover mint arbitrary nullifiers (self-review F2). */
@@ -379,6 +426,10 @@ public class MainActivity extends Activity {
                     Seal.writeFile(
                             new java.io.File(getFilesDir(), "docwit.txt").toPath(),
                             String.join("\n", docWit).getBytes());
+                    // Amortized Tier A credential: commit(attributes) once, sealed;
+                    // presentations then run present_amortized (~0.8s). See
+                    // docs/amortized-enrollment.md.
+                    enrollAmortized(dg1, wd, d, t);
                     say("PASSIVE AUTHENTICATION OK — proving CSCA→DSC (enroll, ~10s)…");
                     // Enrollment proof: CSCA(in master list)→DSC, once. ADR-005.
                     proveEnroll(dg1, sod, masterList, d);

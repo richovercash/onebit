@@ -80,10 +80,25 @@ with a verifier each epoch (20 s), cheap presentations after, within-epoch
 linkage already accepted by the SPEC. That's the next milestone if Tier B
 latency matters; for Tier A, presentations are done and sub-second.
 
-## Status
+## Status — wired end-to-end
 
-Prototype = circuit + witness derivation + native measurement + F2 negative
-test + this doc. Wiring `present_amortized` into the wallet (enrollment seals
-the 6 fields; presentation reads + proves) and the verifier SDK (accept the
-`present_amortized` circuit, tier A) is the integration step — mechanical, not a
-design question. `circuits/present_amortized` is in the CI compile+solve smoke.
+**Wallet.** Enrollment (`MainActivity.enrollAmortized`) runs the `commit` circuit
+to compute `(C, doc_hash)` exactly as Circuit E does, then SE-seals the 6 fields
+to `acred.bin` (via `Seal`). Presentation (`Present`, amortized branch) reads
+`acred.bin`, builds the 9-field witness, native-proves `present_amortized`
+(~0.8 s), and sends an envelope with `circuit: "present_amortized"`, `tier: "A"`,
+no enroll proof. When `acred.bin` is present it takes this path; otherwise it
+falls back to the faithful mono path.
+
+**Verifier.** `VerifySdk` branches on the `circuit` field: `present_amortized`
+→ 4 public inputs `[ctx, current, age_min, N]`, verified against the challenge +
+bb.js (`CIRCUIT=present_amortized.json`), provenance carried by attestation (no
+enroll proof). `mono_faithful` → the existing 5-input dual-proof path.
+
+**Validated.** A real `present_amortized` proof generated on the Pixel 9a
+verifies through the exact verifier sidecar → `ZK_OK` (fixture
+`verifier/js/testdata/pa_proof.bin`, checked by `scripts/test.sh`). Circuit,
+verifier, and app all compile; verifier JUnit green; F2 rebind negative-tested;
+`present_amortized` in the CI compile+solve smoke. The only step needing a
+physical passport (NFC enrollment) is the live document read — the ZK vertical
+(commit → seal → prove → verify) is exercised with real proofs.
