@@ -243,6 +243,13 @@ public class MainActivity extends Activity {
     private void handleDeepLink(android.content.Intent intent) {
         android.net.Uri u = intent == null ? null : intent.getData();
         if (u == null || !"onebit".equals(u.getScheme())) return;
+        // P1.0 spike: adb-triggerable native recursion bench (no UI tap needed).
+        //   adb shell am start -a android.intent.action.VIEW -d onebit://benchp
+        // Read the result: adb logcat -s ONEBIT_NATIVE  ->  PROVE OK [recursion-775k]
+        if ("benchp".equals(u.getHost())) {
+            nativeProveTest("zk/circuit_p.json", "zk/wit_p.txt", "recursion-775k");
+            return;
+        }
         String c = u.getQueryParameter("c");
         if (c == null) { say("Deep link missing challenge."); return; }
         String json = new String(android.util.Base64.decode(c,

@@ -1,3 +1,45 @@
+# Measurement: recursive Circuit P v1 on real hardware
+
+## Update 2026-07-21 — NATIVE multi-threaded on Pixel 9a: ~20.3 s
+
+The 2026-07-17 number below (93 s) was the **WASM WebView** path, pinned to one
+core. The path that actually runs presentations is the **native** prover
+(noir-rs, all cores) — the same one that does mono_faithful in ~2.5 s. Measured
+it on the Pixel 9a (tegu, Tensor G4):
+
+| Metric | Value |
+|---|---|
+| Circuit | Circuit P v1, 775,800 gates (recursion: verifies π_E in-circuit) |
+| Prover | native noir-rs, multi-threaded, `low_mem=false` |
+| SRS load (one-time) | 5.0 s (8,388,609 G1 points) |
+| vk (one-time) | 7.8 s |
+| **Per-proof** | **20.3 s** (3 runs: 20.34 / 20.23 / 20.39 — dead stable) |
+| Peak memory | ~2.6 GiB |
+| Proof size | 16,196 bytes · VERIFY OK |
+| Desktop 32-thread reference | 4.8 s |
+
+**The crash we hit first (worth recording):** the native prover *aborted* on
+Circuit P before this run. Cause was **not** the recursion opcode — it was SRS
+sizing. noir-rs's `setup_srs_from_bytecode` multiplies circuit size by
+`ULTRA_HONK_SRS_MULTIPLIER = 8`, so Circuit P wants a 2^23-point (~512 MB) SRS;
+the bundled device `g1_big.dat` is only 150 MB (fine for the non-recursive
+circuits, short for this one). It ran off the end of the slice and panicked
+across the FFI boundary (SIGABRT — the Java `catch` never fires). Desktop `bb`
+sizes to the real ~2^20 circuit so it never needed more than the 67 MB CRS.
+Fix: push a 512 MB CRS prefix (`Range: bytes=0-536870975` from
+`crs.aztec.network`, fetched host-side — the phone stays offline, V1 intact).
+See memory `onebit-native-recursion-srs`.
+
+**Verdict unchanged, now with a native number:** 20 s is 4× the <5 s
+presentation budget even multi-threaded. So the decision holds and is
+reinforced — **do not recurse per presentation.** Recurse once at enrollment
+(a 10–30 s one-time step where 20 s is completely acceptable) and keep
+presentations on the cheap ~0.6 s non-recursive circuit. The recursion is
+proven correct AND fast-enough-as-a-one-time-cost on real 2025 phone hardware;
+what's left is the amortization architecture, not the crypto.
+
+---
+
 # Measurement: recursive Circuit P v1 on real hardware (2026-07-17)
 
 ## Result
