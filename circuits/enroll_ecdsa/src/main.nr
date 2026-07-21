@@ -20,6 +20,7 @@ fn main(
     merkle_path: [Field; 10],
     merkle_dirs: u32,
     dsc_modulus: [u128; 18],   // RSA-2048 DSC key, to commit
+    dsc_modulus_off: u32,      // where the 256-byte DSC modulus sits in dsc_tbs
 ) -> pub (Field, Field) {      // (dsc_commit, computed master-list root)
     // 1. CSCA (brainpoolP256r1) signed the DSC certificate
     let h = sha256_var(dsc_tbs, dsc_tbs_len);
@@ -28,6 +29,18 @@ fn main(
     let r: BrainpoolP256r1_Fr = BrainpoolP256r1_Fr::from_be_bytes(csca_sig_r);
     let s: BrainpoolP256r1_Fr = BrainpoolP256r1_Fr::from_be_bytes(csca_sig_s);
     assert(verify_brainpoolp256r1_ecdsa(px, py, h, (r, s)));
+
+    // 1b. Bind dsc_modulus to the DSC pubkey inside the signed cert (else a real
+    //     CSCA->DSC_A chain could commit an attacker's DSC_B). See enroll.nr.
+    let mo = dsc_modulus_off;
+    for lb in 0..17 {
+        let mut v: Field = 0;
+        for b in 0..15 {
+            v = v * 256 + dsc_tbs[mo + 241 - 15 * lb + b] as Field;
+        }
+        assert(v == dsc_modulus[lb] as Field);
+    }
+    assert(dsc_tbs[mo] as Field == dsc_modulus[17] as Field);
 
     // 2. CSCA in the master-list Merkle tree. Leaf = Poseidon2 over the pubkey
     //    (x,y) packed into 16-byte halves.

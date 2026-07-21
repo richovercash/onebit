@@ -42,6 +42,12 @@ public final class EcdsaProbe {
         ASN1Sequence sig = ASN1Sequence.getInstance(dscCert.getSignature());
         BigInteger r = ((ASN1Integer) sig.getObjectAt(0)).getValue();
         BigInteger s = ((ASN1Integer) sig.getObjectAt(1)).getValue();
+        // Normalize to low-s (both (r,s) and (r,n-s) are valid; circuit requires
+        // canonical). brainpoolP256r1 order n. The wallet's ECDSA extraction
+        // must do the same on real signatures.
+        BigInteger n = new BigInteger(
+                "A9FB57DBA1EEA9BC3E660A909D838D718C397AA3B561A6F7901E0E82974856A7", 16);
+        if (s.compareTo(n.shiftRight(1)) > 0) s = n.subtract(s);
         ECPublicKey pk = (ECPublicKey) csca.getPublic();
         BigInteger qx = pk.getW().getAffineX(), qy = pk.getW().getAffineY();
         BigInteger dscN = ((java.security.interfaces.RSAPublicKey) dsc.getPublic()).getModulus();
@@ -63,6 +69,7 @@ public final class EcdsaProbe {
         out.append("merkle_path = ").append(path).append("\n");
         out.append("merkle_dirs = 349525\n");
         out.append("dsc_modulus = ").append(limbs(dscN, 18)).append("\n");
+        out.append("dsc_modulus_off = ").append(Witness.indexOf(tbs, Witness.be256(dscN))).append("\n");
         java.nio.file.Files.writeString(java.nio.file.Path.of(outDir, "enroll_ecdsa.toml"), out.toString());
         System.out.println("brainpoolP256r1 CSCA -> RSA-" + dscN.bitLength() + " DSC, TBS " + tbs.length + "B -> wrote witness");
     }

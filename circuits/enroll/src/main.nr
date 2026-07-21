@@ -20,12 +20,27 @@ fn main(
     merkle_path: [Field; 10],  // path of the CSCA leaf to the master-list root (2^10)
     merkle_dirs: u32,
     dsc_modulus: [u128; 18],   // the DSC's own RSA-2048 key, to commit
+    dsc_modulus_off: u32,      // where the 256-byte DSC modulus sits in dsc_tbs
 ) -> pub (Field, Field) {      // (dsc_commit, computed master-list root)
     // 1. CSCA signed the DSC certificate (CSCA->DSC link)
     let h = sha256_var(dsc_tbs, dsc_tbs_len);
     let params: BigNumParams<35, 4096> = BigNumParams::new(false, csca_modulus, csca_redc);
     let sig: RuntimeBigNum<35, 4096> = RuntimeBigNum { params, limbs: csca_sig };
     assert(verify_sha256_pkcs1v15(h, sig, 65537));
+
+    // 1b. Bind dsc_modulus to the DSC public key INSIDE the signed cert, else a
+    //     real CSCA->DSC_A chain could commit an attacker's unrelated DSC_B.
+    //     Reconstruct the 18 little-endian 120-bit limbs from the 256 big-endian
+    //     modulus bytes at dsc_modulus_off and assert equality.
+    let mo = dsc_modulus_off;
+    for lb in 0..17 {
+        let mut v: Field = 0;
+        for b in 0..15 {
+            v = v * 256 + dsc_tbs[mo + 241 - 15 * lb + b] as Field;
+        }
+        assert(v == dsc_modulus[lb] as Field);
+    }
+    assert(dsc_tbs[mo] as Field == dsc_modulus[17] as Field);
 
     // 2. CSCA is in the master-list Merkle tree (leaf = Poseidon(CSCA modulus))
     let mut csca_fields: [Field; 35] = [0; 35];

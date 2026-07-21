@@ -63,7 +63,8 @@ public final class ChainProbe {
             + "csca_redc = " + limbs(BigInteger.ONE.shiftLeft(2 * 4096 + 6).divide(cscaN), 35) + "\n"
             + "merkle_path = " + path + "\n"
             + "merkle_dirs = 349525\n"
-            + "dsc_modulus = " + limbs(dscN, 18) + "\n";
+            + "dsc_modulus = " + limbs(dscN, 18) + "\n"
+            + "dsc_modulus_off = " + Witness.indexOf(tbs, Witness.be256(dscN)) + "\n";
         java.nio.file.Files.writeString(java.nio.file.Path.of(outDir, "enroll.toml"), enroll);
 
         // --- DSC signs the SOD (mono_faithful witness), SAME dsc key ---

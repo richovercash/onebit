@@ -128,7 +128,21 @@ public final class Witness {
         for (int i = 0; i < 10; i++) w.add(path.get(i).getAsString());
         w.add(String.valueOf(dirs)); // merkle_dirs = leaf index
         limbsHex(w, dscN, 18);
+        // dsc_modulus_off: where the 256-byte DSC modulus sits in the TBS.
+        byte[] be = be256(dscN);
+        int mo = indexOf(tbs, be);
+        if (mo < 0) throw new IllegalStateException("DSC modulus not found in TBS");
+        w.add(String.valueOf(mo));
         return w;
+    }
+
+    /** unsigned 256-byte big-endian representation of a 2048-bit modulus. */
+    static byte[] be256(BigInteger n) {
+        byte[] b = n.toByteArray();               // may have a leading 0x00 sign byte
+        byte[] o = new byte[256];
+        int len = Math.min(b.length, 256);
+        System.arraycopy(b, b.length - len, o, 256 - len, len);
+        return o;
     }
 
     static void limbsHex(List<String> w, BigInteger x, int n) {
