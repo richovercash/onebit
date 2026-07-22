@@ -26,8 +26,12 @@ circuit (mono_faithful for RSA-PKCS1, variants pending for PSS/ECDSA).
   the majority algorithm and the likely US case. `mono_faithful_ecdsa` proves an
   **ECDSA (secp256r1 / P-256) DSC** over the same real ICAO CMS structure —
   built + verifies a real P-256-signed SOD (33k gates; negative-tested:
-  tampering the signature fails `verify_secp256r1_ecdsa`). RSA-PSS is the one
-  remaining DSC variant.
+  tampering the signature fails `verify_secp256r1_ecdsa`). Its matching enroll
+  variant `enroll_dsc_ecdsa` (RSA-4096 CSCA -> P-256 DSC) commits the same
+  `Poseidon2(pubkey x,y)`, so the **faithful ECDSA chain is complete**:
+  CSCA->DSC (enroll_dsc_ecdsa) + DSC->SOD (mono_faithful_ecdsa) link by
+  `dsc_commit`, with the EC point F1-bound to the signed cert (byte-compare;
+  negative-tested). RSA-PSS is the one remaining DSC variant.
 
 ## Next reads to seek (adversarial coverage)
 

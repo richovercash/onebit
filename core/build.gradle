@@ -36,6 +36,12 @@ tasks.register('chainProbe', JavaExec) {
     systemProperty 'dir', '/tmp/scratch/87e4e139-9e18-4bab-9d49-4cfade790afc/scratchpad'
 }
 
+tasks.register('dscEcdsaProbe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.DscEcdsaProbe'
+    systemProperty 'dir', project.rootDir.path + '/circuits/enroll_dsc_ecdsa'
+}
+
 tasks.register('ecdsaCmsProbe', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'onebit.core.EcdsaCmsProbe'
