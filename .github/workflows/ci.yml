@@ -20,6 +20,6 @@ jobs:
 
       - name: Circuit compile smoke
         run: |
-          for c in mono_faithful enroll enroll_ecdsa present_amortized enroll_rsa6144 enroll_p384 mono_faithful_ecdsa enroll_dsc_ecdsa; do
+          for c in mono_faithful enroll enroll_ecdsa present_amortized enroll_rsa6144 enroll_p384 mono_faithful_ecdsa enroll_dsc_ecdsa mono_faithful_pss; do
             (cd circuits/$c && nargo compile) || exit 1
           done

@@ -36,6 +36,12 @@ tasks.register('chainProbe', JavaExec) {
     systemProperty 'dir', '/tmp/scratch/87e4e139-9e18-4bab-9d49-4cfade790afc/scratchpad'
 }
 
+tasks.register('pssProbe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.PssProbe'
+    systemProperty 'out', project.rootDir.path + '/circuits/mono_faithful_pss/Prover.toml'
+}
+
 tasks.register('dscEcdsaProbe', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'onebit.core.DscEcdsaProbe'

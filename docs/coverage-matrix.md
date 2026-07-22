@@ -31,11 +31,13 @@ circuit (mono_faithful for RSA-PKCS1, variants pending for PSS/ECDSA).
   `Poseidon2(pubkey x,y)`, so the **faithful ECDSA chain is complete**:
   CSCA->DSC (enroll_dsc_ecdsa) + DSC->SOD (mono_faithful_ecdsa) link by
   `dsc_commit`, with the EC point F1-bound to the signed cert (byte-compare;
-  negative-tested). RSA-PSS is the one remaining DSC variant.
+  negative-tested). RSA-PSS DSCs are covered by `mono_faithful_pss` (verify_sha256_pss, MGF1-SHA256, 32-byte salt) -- verifies a real RSASSA-PSS SOD; negative-tested. All DSC signature algorithms (RSA PKCS#1, ECDSA P-256, RSA-PSS) now have presentation circuits.
 
 ## Next reads to seek (adversarial coverage)
 
-- An **RSA-PSS** DSC document (some EU issuers) — needs the PSS circuit variant.
+- An **RSA-PSS** DSC document (some EU issuers) — `mono_faithful_pss` is built +
+  verifies a real RSASSA-PSS SOD; needs a live PSS document to exercise
+  end-to-end. `PssProbe` generates the witness.
 - An **ECDSA** DSC document (increasingly common) — `mono_faithful_ecdsa`
   (secp256r1) is built + verifies a real P-256 SOD; needs a live P-256 document
   to exercise end-to-end. `EcdsaCmsProbe` generates the witness.
