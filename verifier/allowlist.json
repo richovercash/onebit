@@ -1,15 +1,33 @@
 {
   "version": 1,
   "roots": [
-    {"name": "google-hw-attestation-2022", "spki_sha256": "feb2ea7551ee316ed4bb443c8293b884dbfdea40b603ee3e4f4a897e4580fbae"},
-    {"name": "google-hw-attestation-ca1-2025", "spki_sha256": "3ee44512a1af2beb39c889490c60ea3f82e43f5d5a5532f5ab9419f676cd07ec"}
+    {
+      "name": "google-hw-attestation-2022",
+      "spki_sha256": "feb2ea7551ee316ed4bb443c8293b884dbfdea40b603ee3e4f4a897e4580fbae"
+    },
+    {
+      "name": "google-hw-attestation-ca1-2025",
+      "spki_sha256": "3ee44512a1af2beb39c889490c60ea3f82e43f5d5a5532f5ab9419f676cd07ec"
+    }
   ],
   "verified_boot": [
-    {"name": "stock-locked", "state": "Verified"},
-    {"name": "grapheneos-pixel9a", "state": "SelfSigned", "boot_key_sha256": ["0508de44ee00bfb49ece32c418af1896391abde0f05b64f41bc9a2dfb589445b"]}
+    {
+      "name": "stock-locked",
+      "state": "Verified"
+    },
+    {
+      "name": "grapheneos-pixel9a",
+      "state": "SelfSigned",
+      "boot_key_sha256": [
+        "0508de44ee00bfb49ece32c418af1896391abde0f05b64f41bc9a2dfb589445b"
+      ]
+    }
   ],
   "min_patch_level": 202501,
   "require_user_auth": true,
   "demo_allow_zk_stub": false,
-  "csca_root_rsa4096": "0x26e9eb1ffb2b852974b8e922d8139420905fe31a4bb8086944d47c5115096e70"
+  "csca_root_rsa4096": "0x26e9eb1ffb2b852974b8e922d8139420905fe31a4bb8086944d47c5115096e70",
+  "csca_root_rsa6144": "0x2243af1d315c930dc403713a9eefae1b3ae9b0200f8f821b952ec761f176734f",
+  "csca_root_brainpool256": "0x248b74817b1e58b64715157e49856979a700b8b0a8b13c2c7e02bfea96906a22",
+  "csca_root_p384": "0x28e467545f6279634a05e1e208c5847c8d4eaab8888a5da8c07d8f90a07a5d70"
 }

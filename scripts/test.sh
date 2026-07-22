@@ -32,4 +32,13 @@ else
   echo "  skip: node or fixture unavailable"
 fi
 
+echo "== CSCA trees: real cert leaf folds to the published per-algorithm root =="
+if command -v node >/dev/null 2>&1 && [ -f app/src/main/assets/masterlist/masterlist.pem ]; then
+  ( cd verifier/js && node verify_tree.mjs ../../app/src/main/assets/masterlist/masterlist.pem ) \
+    | grep -q TREE_OK && echo "  ok: brainpool256 + p384 trees fold to root" \
+    || { echo "  FAIL: tree fold mismatch"; exit 1; }
+else
+  echo "  skip: node or master list unavailable"
+fi
+
 echo "ALL GREEN"
