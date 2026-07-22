@@ -36,6 +36,18 @@ tasks.register('chainProbe', JavaExec) {
     systemProperty 'dir', '/tmp/scratch/87e4e139-9e18-4bab-9d49-4cfade790afc/scratchpad'
 }
 
+tasks.register('rsa6144Probe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.Rsa6144Probe'
+    systemProperty 'dir', project.rootDir.path + '/circuits/enroll_rsa6144'
+}
+
+tasks.register('p384Probe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.P384Probe'
+    systemProperty 'dir', project.rootDir.path + '/circuits/enroll_p384'
+}
+
 tasks.register('spkiCheck', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'onebit.core.SpkiCheck'
