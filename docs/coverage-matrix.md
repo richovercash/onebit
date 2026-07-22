@@ -23,14 +23,18 @@ circuit (mono_faithful for RSA-PKCS1, variants pending for PSS/ECDSA).
 - Still need **RSA-PSS** and **ECDSA** documents to exercise those variants, and
   a document #1 DSC recapture (tap it again — the app now logs `ONEBIT_COVERAGE`).
 - **circuit column**: `mono_faithful` proves RSA-2048 PKCS#1v1.5 / SHA-256 —
-  the majority algorithm and the likely US case. PSS and ECDSA are separate
-  compiled variants (P1.1 remaining), sharing the same shape.
+  the majority algorithm and the likely US case. `mono_faithful_ecdsa` proves an
+  **ECDSA (secp256r1 / P-256) DSC** over the same real ICAO CMS structure —
+  built + verifies a real P-256-signed SOD (33k gates; negative-tested:
+  tampering the signature fails `verify_secp256r1_ecdsa`). RSA-PSS is the one
+  remaining DSC variant.
 
 ## Next reads to seek (adversarial coverage)
 
 - An **RSA-PSS** DSC document (some EU issuers) — needs the PSS circuit variant.
-- An **ECDSA** DSC document (increasingly common; cheaper in-circuit) — needs
-  the ECDSA variant (noir-ecdsa).
+- An **ECDSA** DSC document (increasingly common) — `mono_faithful_ecdsa`
+  (secp256r1) is built + verifies a real P-256 SOD; needs a live P-256 document
+  to exercise end-to-end. `EcdsaCmsProbe` generates the witness.
 - A **SHA-1-era legacy** document near end of validity — **time-critical**,
   those expire within ~12 months; read any specimen on sight.
 - **RSA-4096** CSCA / DSC — larger bignum params.
