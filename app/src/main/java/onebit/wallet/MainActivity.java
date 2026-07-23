@@ -194,28 +194,34 @@ public class MainActivity extends Activity {
         root.addView(b);
     }
 
-    /** One-time enrollment proof: CSCA(RSA, in master list) signed the DSC.
-     *  Persisted as enrollproof.bin; presentation sends it alongside. */
+    /** One-time enrollment proof: CSCA (in master list) signed the DSC. Routes
+     *  to the enroll variant for the CSCA's algorithm (RSA≤4096 / RSA-6144 /
+     *  brainpoolP256r1 / secp384r1). Persists enrollproof.bin + the algorithm
+     *  tag; presentation sends both, the verifier checks the matching root. */
     private void proveEnroll(byte[] dg1, byte[] sod,
                              java.util.List<java.security.cert.X509Certificate> masterList,
                              PassiveAuth.MrzData d) {
         try {
-            String tree = readAsset("zk/cscatree_rsa4096.json");
-            java.util.List<String> ew = onebit.core.Witness.enroll(dg1, sod, masterList, tree);
-            if (ew == null) { say("Enrolled (DSC OK). CSCA not in RSA≤4096 tree (ECDSA/6144) — needs that variant."); return; }
+            onebit.core.Witness.EnrollPlan plan = onebit.core.Witness.enrollRouted(
+                    dg1, sod, masterList, alg -> {
+                        try { return readAsset("zk/cscatree_" + alg + ".json"); }
+                        catch (Exception e) { throw new RuntimeException(e); }
+                    });
+            if (plan == null) { say("Enrolled (DSC OK). CSCA algorithm has no enroll circuit yet (e.g. secp256r1 / brainpoolP384r1)."); return; }
             java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
             if (!g1.exists()) { say("Enrolled. (SRS missing for enroll proof.)"); return; }
             android.os.PowerManager pm = getSystemService(android.os.PowerManager.class);
             android.os.PowerManager.WakeLock wl = pm.newWakeLock(
                     android.os.PowerManager.PARTIAL_WAKE_LOCK, "onebit:enroll");
-            wl.acquire(120_000);
+            wl.acquire(600_000);
             try {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
-                String circuit = readAsset("zk/enroll.json");
+                String circuit = readAsset(plan.circuitAsset);
                 long e0 = System.currentTimeMillis();
-                byte[] proof = NativeProver.prove(circuit, String.join("\n", ew), g1.getAbsolutePath(), false);
+                byte[] proof = NativeProver.prove(circuit, String.join("\n", plan.witness), g1.getAbsolutePath(), false);
                 Seal.writeFile(new java.io.File(getFilesDir(), "enrollproof.bin").toPath(), proof);
-                say("ENROLLED — CSCA→DSC proven in " + (System.currentTimeMillis() - e0) + " ms.\n"
+                java.nio.file.Files.write(new java.io.File(getFilesDir(), "enrollalg.txt").toPath(), plan.alg.getBytes());
+                say("ENROLLED (" + plan.alg + ") — CSCA→DSC proven in " + (System.currentTimeMillis() - e0) + " ms.\n"
                         + "DSC: " + d.dscInfo + " · full chain ready.");
             } finally { if (wl.isHeld()) wl.release(); }
         } catch (Throwable ex) {

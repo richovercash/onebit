@@ -222,6 +222,7 @@ final class Present {
                 // Amortized: provenance established at enrollment + attested (T3);
                 // no per-presentation enroll proof. Faithful: dual-proof chain.
                 .put("enroll_proof", amortized ? "" : enrollProofB64())
+                .put("enroll_alg", amortized ? "" : enrollAlg())
                 .put("binding", amortized ? "attested-enrollment" : "document")
                 .toString();
     }
@@ -235,6 +236,16 @@ final class Present {
                     new java.io.File(a.getFilesDir(), "enrollproof.bin").toPath());
             return Base64.encodeToString(p, Base64.NO_WRAP);
         } catch (Exception e) { return ""; }
+    }
+
+    /** CSCA algorithm the enroll proof was made for (verifier picks the circuit
+     *  + published root). Defaults to rsa4096. */
+    private String enrollAlg() {
+        try {
+            return new String(java.nio.file.Files.readAllBytes(
+                    new java.io.File(a.getFilesDir(), "enrollalg.txt").toPath()),
+                    StandardCharsets.UTF_8).trim();
+        } catch (Exception e) { return "rsa4096"; }
     }
 
     private static String fieldHex(byte[] flat, int index) {

@@ -101,6 +101,16 @@ public final class VerifySdk {
                     if (enrollB64.isEmpty()) {
                         v.chain = "DSC->SOD only (no enroll proof; CSCA->DSC attestation-backed)";
                     } else {
+                        // Route the enroll verify by the CSCA algorithm the wallet
+                        // used: circuit + published root must match.
+                        String eAlg = r.has("enroll_alg") && !r.get("enroll_alg").getAsString().isEmpty()
+                                ? r.get("enroll_alg").getAsString() : "rsa4096";
+                        String eCircuit = eAlg.equals("rsa4096") ? "enroll.json"
+                                : eAlg.equals("rsa6144") ? "enroll_rsa6144.json"
+                                : eAlg.equals("brainpool256") ? "enroll_ecdsa.json"
+                                : eAlg.equals("p384") ? "enroll_p384.json" : null;
+                        String eRootKey = "csca_root_" + eAlg;
+                        if (eCircuit == null) throw new IllegalStateException("unknown enroll_alg: " + eAlg);
                         byte[] eb = Base64.getDecoder().decode(enrollB64);
                         // enroll public inputs: [dsc_commit, root] after the 4-byte prefix
                         java.math.BigInteger eDscCommit = new java.math.BigInteger(1,
@@ -110,18 +120,19 @@ public final class VerifySdk {
                         if (!eDscCommit.equals(pub[4])) {
                             throw new IllegalStateException("enroll dsc_commit != presentation dsc_commit");
                         }
-                        if (!zkVerify(eb, 2, "enroll.json")) {
+                        if (!zkVerify(eb, 2, eCircuit)) {
                             throw new IllegalStateException("enrollment proof invalid");
                         }
-                        // The CSCA is in the PUBLISHED master-list tree (real root).
-                        if (allowlist.has("csca_root_rsa4096")) {
+                        // The CSCA is in the PUBLISHED master-list tree (real root)
+                        // for its algorithm.
+                        if (allowlist.has(eRootKey)) {
                             java.math.BigInteger published = new java.math.BigInteger(
-                                    allowlist.get("csca_root_rsa4096").getAsString().substring(2), 16);
+                                    allowlist.get(eRootKey).getAsString().substring(2), 16);
                             if (!eRoot.equals(published)) {
-                                throw new IllegalStateException("CSCA not in published master-list tree");
+                                throw new IllegalStateException("CSCA not in published " + eAlg + " tree");
                             }
                         }
-                        v.chain = "CSCA(in master list)->DSC->SOD, fully verified in ZK";
+                        v.chain = "CSCA(" + eAlg + ", in master list)->DSC->SOD, fully verified in ZK";
                     }
                 }
             }
