@@ -56,8 +56,15 @@ public final class VerifySdk {
             //    not re-proven per presentation. See docs/amortized-enrollment.md.
             String circuit = r.has("circuit") ? r.get("circuit").getAsString() : "mono_faithful";
             boolean amortized = "present_amortized".equals(circuit);
+            // Faithful family: mono_faithful (RSA PKCS1) / _pss / _ecdsa — all 5
+            // public inputs [ctx, current, age_min, N, dsc_commit].
+            java.util.Set<String> FAITHFUL = java.util.Set.of(
+                    "mono_faithful", "mono_faithful_pss", "mono_faithful_ecdsa");
+            if (!amortized && !FAITHFUL.contains(circuit)) {
+                throw new IllegalStateException("unknown presentation circuit: " + circuit);
+            }
             int pubCount = amortized ? 4 : 5;
-            String circuitJson = amortized ? "present_amortized.json" : "mono_faithful.json";
+            String circuitJson = amortized ? "present_amortized.json" : circuit + ".json";
 
             byte[] proofBytes = Base64.getDecoder().decode(r.get("proof").getAsString());
             String proofStr = new String(proofBytes, 0, Math.min(4, proofBytes.length), StandardCharsets.UTF_8);

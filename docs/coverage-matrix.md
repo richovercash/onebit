@@ -78,3 +78,10 @@ right circuit/tree per curve. EC certs are bucketed by exact field prime
 `enroll_dsc_ecdsa`: an RSA-4096 CSCA signs a P-256 DSC, committed as
 `Poseidon2(pubkey x,y)` so it pairs with `mono_faithful_ecdsa` at presentation.
 It reuses the rsa4096 tree/root (the CSCA is still RSA-4096).
+
+**Presentation is also routed by DSC signature type.** `Witness.extract` tags
+the document `mono_faithful` (RSA PKCS#1), `mono_faithful_pss` (RSASSA-PSS /
+MGF1), or `mono_faithful_ecdsa` (secp256r1); the wallet persists the tag and
+proves that circuit, and `VerifySdk` verifies against it (all three are 5 public
+inputs). This also fixed a latent break: `extract` previously force-parsed an RSA
+modulus and threw on any ECDSA DSC. `PresentRouteTest` covers all three types.

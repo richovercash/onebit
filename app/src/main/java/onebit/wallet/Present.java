@@ -42,6 +42,7 @@ final class Present {
     private final Activity a;
     private final Consumer<String> say;
     private boolean amortized;   // Tier A fast path: acred.bin enrolled
+    private String faithfulCircuit = "mono_faithful"; // or _pss / _ecdsa by DSC type
 
     Present(Activity a, Consumer<String> say) {
         this.a = a;
@@ -69,6 +70,11 @@ final class Present {
         // Prefer the amortized Tier A path (~0.8s) if its credential is enrolled;
         // fall back to the faithful mono path (~2.5s, full CMS passive auth).
         amortized = new java.io.File(a.getFilesDir(), "acred.bin").exists();
+        try {
+            faithfulCircuit = new String(java.nio.file.Files.readAllBytes(
+                    new java.io.File(a.getFilesDir(), "presalg.txt").toPath()),
+                    StandardCharsets.UTF_8).trim();
+        } catch (Exception e) { faithfulCircuit = "mono_faithful"; }
         java.io.File docWit = new java.io.File(a.getFilesDir(), "docwit.txt");
         if (!amortized && (!cred.contains("k") || !docWit.exists())) {
             say.accept("No credential enrolled — read a document first.");
@@ -90,7 +96,7 @@ final class Present {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
                 wl.acquire(120_000);
 
-                String circuit = readAsset(amortized ? "zk/present_amortized.json" : CIRCUIT);
+                String circuit = readAsset(amortized ? "zk/present_amortized.json" : "zk/" + faithfulCircuit + ".json");
                 String witness = amortized ? buildAmortizedWitness(c) : buildWitness(cred, c);
                 long p0 = System.currentTimeMillis();
                 byte[] proofBytes = NativeProver.prove(circuit, witness, g1.getAbsolutePath(), false);
@@ -218,7 +224,7 @@ final class Present {
                 .put("attestation_chain", chain)
                 .put("mode", "A")
                 .put("tier", "A")
-                .put("circuit", amortized ? "present_amortized" : "mono_faithful")
+                .put("circuit", amortized ? "present_amortized" : faithfulCircuit)
                 // Amortized: provenance established at enrollment + attested (T3);
                 // no per-presentation enroll proof. Faithful: dual-proof chain.
                 .put("enroll_proof", amortized ? "" : enrollProofB64())

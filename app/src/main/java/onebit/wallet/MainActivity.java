@@ -425,13 +425,15 @@ public class MainActivity extends Activity {
                     onebit.core.Witness.Doc wd = onebit.core.Witness.extract(dg1, sod);
                     android.util.Log.i("ONEBIT_COVERAGE", "sizes: eContent=" + wd.eContent.length
                             + " signedAttrs=" + wd.signedAttrs.length + " modBits=" + wd.modulus.bitLength());
-                    // Persist the real document witness for mono_faithful proving
-                    // (SPEC §3.1.5: raw witness retained for monolithic proving),
-                    // SE-wrapped (P1.5) so it can't be lifted off-device.
-                    java.util.List<String> docWit = onebit.core.Witness.monoFaithful(wd, 256, 128);
+                    // Persist the real document witness for faithful proving,
+                    // SE-wrapped (P1.5). The builder + circuit tag follow the DSC
+                    // signature type (RSA PKCS1 / RSA-PSS / secp256r1 ECDSA).
+                    java.util.List<String> docWit = onebit.core.Witness.presentationWitness(wd, 256, 128);
                     Seal.writeFile(
                             new java.io.File(getFilesDir(), "docwit.txt").toPath(),
                             String.join("\n", docWit).getBytes());
+                    java.nio.file.Files.write(
+                            new java.io.File(getFilesDir(), "presalg.txt").toPath(), wd.presCircuit.getBytes());
                     // Amortized Tier A credential: commit(attributes) once, sealed;
                     // presentations then run present_amortized (~0.8s). See
                     // docs/amortized-enrollment.md.

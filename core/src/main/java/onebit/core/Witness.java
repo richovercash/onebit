@@ -27,11 +27,21 @@ public final class Witness {
         public byte[] signedAttrs;   // CMS signedAttributes (0x31 SET OF)
         public int dg1HashOff;       // SHA256(dg1) offset in eContent
         public int eContentHashOff;  // SHA256(eContent) offset in signedAttrs
-        public BigInteger sig;
-        public BigInteger modulus;
+        public String presCircuit = "mono_faithful"; // mono_faithful | _pss | _ecdsa
+        public BigInteger sig, modulus;               // RSA DSC (PKCS1 or PSS)
+        public byte[] ecX, ecY, ecR, ecS;             // secp256r1 DSC, 32 bytes each
     }
 
-    /** Parse the SOD's CMS and pull out the faithful-circuit inputs. */
+    /** secp256r1 group order (for low-s normalization of an ECDSA DSC sig). */
+    static final BigInteger SECP256_ORDER = new BigInteger(
+            "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551", 16);
+    static final String ID_EC_PUBKEY = "1.2.840.10045.2.1";
+    // RSASSA-PSS (id-RSASSA-PSS 1.1.10) or MGF1 (1.1.8, as jmrtd tags PSS sigs).
+    static final java.util.Set<String> OID_PSS = java.util.Set.of(
+            "1.2.840.113549.1.1.10", "1.2.840.113549.1.1.8");
+
+    /** Parse the SOD's CMS and pull out the presentation-circuit inputs, tagging
+     *  which DSC-signature circuit applies (RSA PKCS1 / RSA-PSS / secp256r1). */
     public static Doc extract(byte[] dg1, byte[] sodBytes) throws Exception {
         TLVInputStream tlv = new TLVInputStream(new ByteArrayInputStream(sodBytes));
         tlv.readTag();      // 0x77 ICAO wrapper
@@ -46,13 +56,59 @@ public final class Witness {
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
         d.dg1HashOff = indexOf(d.eContent, sha.digest(dg1));
         d.eContentHashOff = indexOf(d.signedAttrs, sha.digest(d.eContent));
-        d.sig = new BigInteger(1, signer.getSignature());
         org.bouncycastle.cert.X509CertificateHolder holder =
                 (org.bouncycastle.cert.X509CertificateHolder)
                         cms.getCertificates().getMatches(signer.getSID()).iterator().next();
-        d.modulus = org.bouncycastle.asn1.pkcs.RSAPublicKey
-                .getInstance(holder.getSubjectPublicKeyInfo().parsePublicKey()).getModulus();
+        org.bouncycastle.asn1.x509.SubjectPublicKeyInfo spki = holder.getSubjectPublicKeyInfo();
+
+        if (spki.getAlgorithm().getAlgorithm().getId().equals(ID_EC_PUBKEY)) {
+            // secp256r1 DSC: uncompressed point 04||x||y in the SPKI BIT STRING.
+            byte[] pt = spki.getPublicKeyData().getBytes();
+            if (pt.length != 65 || pt[0] != 0x04)
+                throw new IllegalStateException("unsupported EC DSC (want secp256r1 uncompressed point)");
+            d.ecX = java.util.Arrays.copyOfRange(pt, 1, 33);
+            d.ecY = java.util.Arrays.copyOfRange(pt, 33, 65);
+            BigInteger[] rs = ecSig(signer.getSignature(), SECP256_ORDER);
+            d.ecR = toBE(rs[0], 32);
+            d.ecS = toBE(rs[1], 32);
+            d.presCircuit = "mono_faithful_ecdsa";
+        } else {
+            d.sig = new BigInteger(1, signer.getSignature());
+            d.modulus = org.bouncycastle.asn1.pkcs.RSAPublicKey
+                    .getInstance(spki.parsePublicKey()).getModulus();
+            d.presCircuit = OID_PSS.contains(signer.getEncryptionAlgOID())
+                    ? "mono_faithful_pss" : "mono_faithful";
+        }
         return d;
+    }
+
+    /** The presentation witness for this document's DSC type (everything except
+     *  the trailing k, ctx, current, age_min the wallet appends). PSS reuses the
+     *  RSA witness (same inputs, the circuit differs). */
+    public static List<String> presentationWitness(Doc d, int econtentCap, int signedAttrsCap) {
+        return d.presCircuit.equals("mono_faithful_ecdsa")
+                ? monoFaithfulEcdsa(d, econtentCap, signedAttrsCap)
+                : monoFaithful(d, econtentCap, signedAttrsCap);
+    }
+
+    /** mono_faithful_ecdsa document witness: like monoFaithful but the DSC part
+     *  is the secp256r1 pubkey (x,y) + signature (r,s) instead of RSA sig/mod/redc. */
+    public static List<String> monoFaithfulEcdsa(Doc d, int econtentCap, int signedAttrsCap) {
+        if (d.eContent.length > econtentCap || d.signedAttrs.length > signedAttrsCap)
+            throw new IllegalArgumentException("eContent/signedAttrs exceed caps");
+        List<String> w = new ArrayList<>();
+        bytes(w, d.dg1);
+        bytes(w, pad(d.eContent, econtentCap));
+        w.add(String.valueOf(d.eContent.length));
+        bytes(w, pad(d.signedAttrs, signedAttrsCap));
+        w.add(String.valueOf(d.signedAttrs.length));
+        w.add(String.valueOf(d.dg1HashOff));
+        w.add(String.valueOf(d.eContentHashOff));
+        bytes(w, d.ecX);
+        bytes(w, d.ecY);
+        bytes(w, d.ecR);
+        bytes(w, d.ecS);
+        return w;
     }
 
     /** Build the mono_faithful document witness (everything except k, ctx,
