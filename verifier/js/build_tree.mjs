@@ -41,31 +41,37 @@ function ecPoint(spki) {
 
 // leaf = Poseidon2 over n's little-endian 120-bit limbs (matches the RSA enroll circuits)
 const rsaLeaf = (n, nlimbs) => { const limbs = []; let x = n; const mask = (1n << 120n) - 1n; for (let i = 0; i < nlimbs; i++) { limbs.push(x & mask); x >>= 120n; } return pos(limbs); };
-// leaf = Poseidon2 over (x||y) split into big-endian 16-byte chunks (matches the ECDSA enroll circuits)
-const ecLeaf = (x, y) => { const src = Buffer.concat([x, y]); const chunks = []; for (let o = 0; o < src.length; o += 16) chunks.push(beInt(src.subarray(o, o + 16))); return pos(chunks); };
+// leaf = Poseidon2 over x then y, each split into big-endian 16-byte chunks
+// (matches the ECDSA enroll circuits). x and y are packed SEPARATELY so a
+// coordinate whose length isn't a multiple of 16 (P-521 = 66B) chunks correctly.
+const ecLeaf = (x, y) => { const chunks = []; for (const c of [x, y]) for (let o = 0; o < c.length; o += 16) chunks.push(beInt(c.subarray(o, o + 16))); return pos(chunks); };
 
 const T = { rsa4096: { leaves: [], spki: [] }, rsa6144: { leaves: [], spki: [] },
-            brainpool256: { leaves: [], spki: [] }, p384: { leaves: [], spki: [] } };
+            brainpool256: { leaves: [], spki: [] }, p384: { leaves: [], spki: [] },
+            secp256: { leaves: [], spki: [] }, bp384: { leaves: [], spki: [] },
+            secp521: { leaves: [], spki: [] }, bp512: { leaves: [], spki: [] } };
 
-// Field primes for the curves in the master list (openssl only prints an
-// "ASN1 OID:" for named curves; many CSCAs inline explicit params). Mapped for
-// accurate classification even when unnamed; only two are circuit-covered.
-const PRIME = {
-  a9fb57dba1eea9bc3e660a909d838d726e3bf623d52620282013481d1f6e5377: 'brainpoolP256r1',
-  '8cb91e82a3386d280f5d6f7e50e641df152f7109ed5456b412b1da197fb71123acd3a729901d1a71874700133107ec53': 'brainpoolP384r1',
-  ffffffff00000001000000000000000000000000ffffffffffffffffffffffff: 'secp256r1',
-  fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff: 'secp384r1',
-};
-const NAMED = { prime256v1: 'secp256r1', secp256r1: 'secp256r1', secp384r1: 'secp384r1', prime384v1: 'secp384r1' };
-// Identify the exact curve so each tree holds only CSCAs its circuit can verify.
-function ecCurve(txt) {
+// Field prime -> tree bucket (each bucket = one enroll circuit). Compared as
+// BigInts (robust to leading-zero / sign-byte quirks). openssl prints an
+// "ASN1 OID:" only for named curves; brainpool/some NIST CSCAs inline the params.
+const CURVE = [
+  { b: 'brainpool256', p: 0xa9fb57dba1eea9bc3e660a909d838d726e3bf623d52620282013481d1f6e5377n },
+  { b: 'secp256',      p: 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn },
+  { b: 'bp384',        p: 0x8cb91e82a3386d280f5d6f7e50e641df152f7109ed5456b412b1da197fb71123acd3a729901d1a71874700133107ec53n },
+  { b: 'p384',         p: 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffffn },
+  { b: 'secp521',      p: (1n << 521n) - 1n },
+  { b: 'bp512',        p: 0xaadd9db8dbe9c48b3fd4e6ae33c9fc07cb308db3b3c9d20ed6639cca703308717d4d9b009bc66842aecda12ae6a380e62881ff2f2d82c68528aa6056583a48f3n },
+];
+const byPrime = new Map(CURVE.map(c => [c.p, c.b]));
+const NAMED = { prime256v1: 'secp256', secp256r1: 'secp256', secp384r1: 'p384', prime384v1: 'p384', secp521r1: 'secp521', prime521v1: 'secp521' };
+// Bucket an EC cert by its exact curve, or null if we have no circuit for it.
+function ecBucket(txt) {
   const oid = (txt.match(/ASN1 OID: (\S+)/) || [])[1];
-  if (oid) return NAMED[oid] || oid;                     // named (e.g. secp384r1)
-  const pm = txt.match(/Prime:\n((?:\s+[0-9a-f:]+\n)+)/); // openssl prints lowercase hex lines
+  if (oid) return NAMED[oid] || 'named:' + oid;
+  const pm = txt.match(/Prime:\n((?:\s+[0-9a-f:]+\n)+)/); // lowercase hex lines
   if (!pm) return null;
   let h = pm[1].replace(/[\s:]/g, '');
-  if (h.startsWith('00')) h = h.slice(2);                // strip DER sign byte
-  return PRIME[h] || 'ec-' + (h.length * 4) + 'bit';
+  return byPrime.get(BigInt('0x' + h)) || 'ec-' + (h.length * 4) + 'bit';
 }
 const uncovered = {};
 
@@ -92,14 +98,13 @@ for (const b of blocks) {
 
   // EC: bucket by EXACT curve (a 384-bit brainpool CSCA is NOT verifiable by the
   // secp384r1 circuit, so it must not land in the p384 tree).
-  let pt = null, curve = null;
+  let pt = null, bucket = null;
   try {
     pt = ecPoint(spkiDer);
-    curve = ecCurve(execSync('openssl x509 -noout -text', { input: b }).toString());
+    bucket = ecBucket(execSync('openssl x509 -noout -text', { input: b }).toString());
   } catch { pt = null; }
-  if (pt && curve === 'brainpoolP256r1' && pt.x.length === 32) { T.brainpool256.leaves.push(ecLeaf(pt.x, pt.y)); T.brainpool256.spki.push(id); }
-  else if (pt && curve === 'secp384r1' && pt.x.length === 48) { T.p384.leaves.push(ecLeaf(pt.x, pt.y)); T.p384.spki.push(id); }
-  else { skipped++; if (pt) uncovered[curve] = (uncovered[curve] || 0) + 1; }
+  if (pt && bucket && T[bucket]) { T[bucket].leaves.push(ecLeaf(pt.x, pt.y)); T[bucket].spki.push(id); }
+  else { skipped++; if (pt) uncovered[bucket] = (uncovered[bucket] || 0) + 1; }
 }
 
 function buildTree(name, leaves, spki) {

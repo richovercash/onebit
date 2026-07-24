@@ -12,7 +12,7 @@ const P = 2188824287183927522224640574525727508854836440041603434369820418657580
 const frBuf = (v) => { let b = Buffer.alloc(32); let x = ((BigInt(v) % P) + P) % P; for (let i = 31; i >= 0; i--) { b[i] = Number(x & 0xffn); x >>= 8n; } return b; };
 const pos = (arr) => BigInt('0x' + Buffer.from(api.poseidon2Hash({ inputs: arr.map(frBuf) }).hash).toString('hex'));
 const beInt = (buf) => { let x = 0n; for (const b of buf) x = (x << 8n) + BigInt(b); return x; };
-const ecLeaf = (x, y) => { const s = Buffer.concat([x, y]); const c = []; for (let o = 0; o < s.length; o += 16) c.push(beInt(s.subarray(o, o + 16))); return pos(c); };
+const ecLeaf = (x, y) => { const c = []; for (const co of [x, y]) for (let o = 0; o < co.length; o += 16) c.push(beInt(co.subarray(o, o + 16))); return pos(c); };
 function tlv(b, o) { let i = o + 1, l = b[i++]; if (l & 0x80) { let n = l & 0x7f; l = 0; while (n-- > 0) l = (l << 8) | b[i++]; } return { tag: b[o], hEnd: i, end: i + l }; }
 function ecPoint(s) { const seq = tlv(s, 0), alg = tlv(s, seq.hEnd), bs = tlv(s, alg.end); const p = s.subarray(bs.hEnd + 1, bs.end); const c = (p.length - 1) / 2; return { x: p.subarray(1, 1 + c), y: p.subarray(1 + c) }; }
 
@@ -20,7 +20,9 @@ const pem = readFileSync(process.argv[2] || './masterlist.pem', 'utf8');
 const blocks = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
 
 let pass = 0, checked = 0;
-for (const [tree, wantBits] of [['brainpool256', 256], ['p384', 384]]) {
+// Each EC tree + the coordinate byte length that identifies its curve.
+const TREES = [['brainpool256', 32], ['secp256', 32], ['p384', 48], ['bp384', 48], ['secp521', 66], ['bp512', 64]];
+for (const [tree, wantBytes] of TREES) {
   const t = JSON.parse(readFileSync(`./cscatree_${tree}.json`, 'utf8'));
   for (const b of blocks) {
     let spkiDer;
@@ -28,7 +30,7 @@ for (const [tree, wantBits] of [['brainpool256', 256], ['p384', 384]]) {
     const id = createHash('sha256').update(spkiDer).digest('hex');
     if (!t.paths[id]) continue;                         // not in this tree
     const pt = ecPoint(spkiDer);
-    if (pt.x.length * 8 !== wantBits) continue;
+    if (pt.x.length !== wantBytes) continue;
     let node = ecLeaf(pt.x, pt.y);
     const { dirs, path } = t.paths[id];
     for (let d = 0; d < path.length; d++) {
@@ -37,10 +39,10 @@ for (const [tree, wantBits] of [['brainpool256', 256], ['p384', 384]]) {
     }
     checked++;
     const ok = ('0x' + node.toString(16)) === t.root;
-    console.log(`  ${tree}: leaf ${id.slice(0, 12)}… folds to root: ${ok ? 'OK' : 'MISMATCH'}`);
+    console.log(`  ${tree.padEnd(13)} leaf ${id.slice(0, 12)}… folds to root: ${ok ? 'OK' : 'MISMATCH'}`);
     if (ok) pass++;
     break;                                              // one per tree is enough
   }
 }
-console.log(pass === checked && checked === 2 ? 'TREE_OK' : 'TREE_FAIL');
-process.exit(pass === checked && checked === 2 ? 0 : 1);
+console.log(pass === checked && checked === TREES.length ? 'TREE_OK' : 'TREE_FAIL');
+process.exit(pass === checked && checked === TREES.length ? 0 : 1);

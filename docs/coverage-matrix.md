@@ -57,24 +57,24 @@ appear, many with inline explicit params):
 |----------|-------|----------------|-------|--------|
 | RSA ≤4096 (2048/3072/4096) | 272 | `enroll` (35-limb, 19k gates) | `0x26e9eb1f…` | ✅ live (US passport) |
 | RSA-6144 | 4 | `enroll_rsa6144` (52-limb, 23k gates) | `0x2243af1d…` | ✅ built + verifies |
-| brainpoolP256r1 | 14 | `enroll_ecdsa` (43k gates) | `0x248b7481…` | ✅ built + verifies |
+| brainpoolP256r1 | 14 | `enroll_ecdsa` (SHA-256, 43k gates) | `0x248b7481…` | ✅ built + verifies |
+| secp256r1 (P-256) | 14 | `enroll_secp256` (SHA-256) | `0x1e241e46…` | ✅ built + verifies |
 | secp384r1 (P-384) | 19 | `enroll_p384` (SHA-384, 298k gates) | `0x28e46754…` | ✅ built + verifies |
+| brainpoolP384r1 | 33 | `enroll_bp384` (SHA-384) | `0x1c9757dd…` | ✅ built + verifies |
+| secp521r1 (P-521) | 10 | `enroll_secp521` (SHA-512, 66-byte coords) | `0x10214194…` | ✅ built + verifies |
+| brainpoolP512r1 | 10 | `enroll_bp512` (SHA-512) | `0x1c015dc3…` | ✅ built + verifies |
 
-Covered: **309 unique CSCAs**, each with a real per-algorithm Merkle tree
-(`cscatree_<alg>.json`, depth 10) whose leaf construction matches its circuit
-exactly. The RSA-4096 root reproduces the previously published
-`0x26e9eb1f…` byte-for-byte (regression check on the generalized builder). All
-four roots are published in `verifier/allowlist.json`. Each circuit verifies a
-real synthetic cert of its type (CI smoke) and carries the F1 DSC-binding fix.
+**Every CSCA in the bundled master list is now covered — 376 unique CSCAs,
+0 skipped, 0 uncovered** (`build_tree.mjs` reports `uncovered: {}`). Each has a
+real per-algorithm Merkle tree (`cscatree_<alg>.json`, depth 10) whose leaf
+construction matches its circuit exactly; a real cert's leaf folds to the
+published root for every tree (`verify_tree.mjs` → `TREE_OK`). The RSA-4096 root
+still reproduces the published `0x26e9eb1f…` byte-for-byte. All 8 roots are in
+`verifier/allowlist.json`; `EnrollRouteTest` (10) checks the router picks the
+right circuit/tree per curve. EC certs are bucketed by exact field prime
+(BigInt-compared), so a brainpoolP384r1 CSCA never lands in the secp384r1 tree.
 
 **ECDSA-DSC documents** (the DSC key itself is ECDSA, not the CSCA) route to
 `enroll_dsc_ecdsa`: an RSA-4096 CSCA signs a P-256 DSC, committed as
 `Poseidon2(pubkey x,y)` so it pairs with `mono_faithful_ecdsa` at presentation.
-It reuses the rsa4096 tree/root (the CSCA is still RSA-4096). The router picks it
-by DSC key type; `EnrollRouteTest` covers it (RSA-4096 CSCA → P-256 DSC → SOD).
-
-**Uncovered (need their own enroll variant):** secp256r1 (20), brainpoolP384r1
-(52), secp521r1 (20), brainpoolP512r1 (17) — 109 unique EC CSCAs across 4 more
-curves. `build_tree.mjs` reports these in its `uncovered` census so the gap is
-explicit, not silent. Adding each is a clone of the ECDSA enroll pattern with
-the matching curve field/verify (and SHA-384/512 for the larger curves).
+It reuses the rsa4096 tree/root (the CSCA is still RSA-4096).

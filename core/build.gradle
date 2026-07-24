@@ -48,6 +48,14 @@ tasks.register('dscEcdsaProbe', JavaExec) {
     systemProperty 'dir', project.rootDir.path + '/circuits/enroll_dsc_ecdsa'
 }
 
+tasks.register('ecEnrollProbe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.EcEnrollProbe'
+    systemProperty 'curve', findProperty('curve') ?: 'secp256r1'
+    systemProperty 'sig', findProperty('sig') ?: 'SHA256withECDSA'
+    systemProperty 'out', findProperty('out') ?: (project.rootDir.path + '/circuits/enroll_secp256/Prover.toml')
+}
+
 tasks.register('ecdsaCmsProbe', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'onebit.core.EcdsaCmsProbe'

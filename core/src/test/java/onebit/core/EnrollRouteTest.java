@@ -100,8 +100,12 @@ public class EnrollRouteTest {
 
     @Test public void rsa4096()      throws Exception { check("RSA4096", "SHA256withRSA",   "rsa4096",      "enroll.json",         2184); }
     @Test public void rsa6144()      throws Exception { check("RSA6144", "SHA256withRSA",   "rsa6144",      "enroll_rsa6144.json", 2235); }
-    @Test public void brainpool256() throws Exception { check("brainpoolP256r1", "SHA256withECDSA", "brainpool256", "enroll_ecdsa.json", 2207); }
-    @Test public void p384()         throws Exception { check("secp384r1", "SHA384withECDSA", "p384",         "enroll_p384.json",    2271); }
+    @Test public void brainpool256() throws Exception { check("brainpoolP256r1", "SHA256withECDSA", "brainpool256", "enroll_ecdsa.json",   2207); }
+    @Test public void secp256()      throws Exception { check("secp256r1",       "SHA256withECDSA", "secp256",      "enroll_secp256.json", 2207); }
+    @Test public void p384()         throws Exception { check("secp384r1",       "SHA384withECDSA", "p384",         "enroll_p384.json",    2271); }
+    @Test public void bp384()        throws Exception { check("brainpoolP384r1", "SHA384withECDSA", "bp384",        "enroll_bp384.json",   2271); }
+    @Test public void secp521()      throws Exception { check("secp521r1",       "SHA512withECDSA", "secp521",      "enroll_secp521.json", 2343); }
+    @Test public void bp512()        throws Exception { check("brainpoolP512r1", "SHA512withECDSA", "bp512",        "enroll_bp512.json",   2335); }
 
     @Test public void dscEcdsaP256() throws Exception {
         // RSA-4096 CSCA -> P-256 DSC -> SOD (P-256 signed): uses the rsa4096 tree
@@ -126,7 +130,7 @@ public class EnrollRouteTest {
     }
 
     @Test public void unsupportedCurveReturnsNull() throws Exception {
-        Object[] c = chain("secp521r1", "SHA512withECDSA");
+        Object[] c = chain("secp192r1", "SHA256withECDSA"); // P-192: no circuit
         X509Certificate csca = (X509Certificate) c[0];
         assertEquals(null, Witness.enrollRouted(dg1, (byte[]) c[1], List.of(csca), stubTree(csca)));
     }

@@ -105,14 +105,12 @@ public final class VerifySdk {
                         // used: circuit + published root must match.
                         String eAlg = r.has("enroll_alg") && !r.get("enroll_alg").getAsString().isEmpty()
                                 ? r.get("enroll_alg").getAsString() : "rsa4096";
-                        String eCircuit = eAlg.equals("rsa4096") ? "enroll.json"
-                                : eAlg.equals("rsa6144") ? "enroll_rsa6144.json"
-                                : eAlg.equals("brainpool256") ? "enroll_ecdsa.json"
-                                : eAlg.equals("p384") ? "enroll_p384.json"
-                                : eAlg.equals("dsc_ecdsa") ? "enroll_dsc_ecdsa.json" : null;
+                        // Same alg->circuit map the wallet routes with (core).
+                        String circuitName = onebit.core.Witness.CIRCUIT.get(eAlg);
+                        if (circuitName == null) throw new IllegalStateException("unknown enroll_alg: " + eAlg);
+                        String eCircuit = circuitName + ".json";
                         // dsc_ecdsa is a P-256 DSC under an RSA-4096 CSCA -> rsa4096 tree/root.
                         String eRootKey = "csca_root_" + (eAlg.equals("dsc_ecdsa") ? "rsa4096" : eAlg);
-                        if (eCircuit == null) throw new IllegalStateException("unknown enroll_alg: " + eAlg);
                         byte[] eb = Base64.getDecoder().decode(enrollB64);
                         // enroll public inputs: [dsc_commit, root] after the 4-byte prefix
                         java.math.BigInteger eDscCommit = new java.math.BigInteger(1,

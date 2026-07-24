@@ -158,16 +158,26 @@ public final class Witness {
     }
 
     /** alg -> enroll circuit asset name. Shared shape with the verifier. */
-    public static final Map<String, String> CIRCUIT = Map.of(
-            "rsa4096", "enroll", "rsa6144", "enroll_rsa6144",
-            "brainpool256", "enroll_ecdsa", "p384", "enroll_p384",
-            "dsc_ecdsa", "enroll_dsc_ecdsa");
+    public static final Map<String, String> CIRCUIT = Map.ofEntries(
+            Map.entry("rsa4096", "enroll"), Map.entry("rsa6144", "enroll_rsa6144"),
+            Map.entry("brainpool256", "enroll_ecdsa"), Map.entry("p384", "enroll_p384"),
+            Map.entry("secp256", "enroll_secp256"), Map.entry("bp384", "enroll_bp384"),
+            Map.entry("secp521", "enroll_secp521"), Map.entry("bp512", "enroll_bp512"),
+            Map.entry("dsc_ecdsa", "enroll_dsc_ecdsa"));
 
     static final java.security.Provider BC = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+    // EC field primes -> (tree bucket, coordinate byte length). Matches build_tree.mjs.
     static final BigInteger BP256_PRIME = new BigInteger(
             "a9fb57dba1eea9bc3e660a909d838d726e3bf623d52620282013481d1f6e5377", 16);
+    static final BigInteger SECP256_PRIME = new BigInteger(
+            "ffffffff00000001000000000000000000000000ffffffffffffffffffffffff", 16);
     static final BigInteger P384_PRIME = new BigInteger(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff", 16);
+    static final BigInteger BP384_PRIME = new BigInteger(
+            "8cb91e82a3386d280f5d6f7e50e641df152f7109ed5456b412b1da197fb71123acd3a729901d1a71874700133107ec53", 16);
+    static final BigInteger SECP521_PRIME = BigInteger.ONE.shiftLeft(521).subtract(BigInteger.ONE);
+    static final BigInteger BP512_PRIME = new BigInteger(
+            "aadd9db8dbe9c48b3fd4e6ae33c9fc07cb308db3b3c9d20ed6639cca703308717d4d9b009bc66842aecda12ae6a380e62881ff2f2d82c68528aa6056583a48f3", 16);
 
     /** Route enrollment by CSCA algorithm. Returns the plan for the matching
      *  enroll variant, or null if unsupported (CSCA curve/size we have no circuit
@@ -212,7 +222,11 @@ public final class Witness {
             BigInteger prime = ((java.security.spec.ECFieldFp) ec.getParams().getCurve().getField()).getP();
             int clen;
             if (prime.equals(BP256_PRIME)) { treeAlg = "brainpool256"; clen = 32; }
+            else if (prime.equals(SECP256_PRIME)) { treeAlg = "secp256"; clen = 32; }
             else if (prime.equals(P384_PRIME)) { treeAlg = "p384"; clen = 48; }
+            else if (prime.equals(BP384_PRIME)) { treeAlg = "bp384"; clen = 48; }
+            else if (prime.equals(SECP521_PRIME)) { treeAlg = "secp521"; clen = 66; }
+            else if (prime.equals(BP512_PRIME)) { treeAlg = "bp512"; clen = 64; }
             else return null;                                   // curve without a circuit
             BigInteger[] rs = ecSig(dsc.getSignature(), ec.getParams().getOrder());
             bytes(w, toBE(ec.getW().getAffineX(), clen));

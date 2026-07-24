@@ -16,7 +16,7 @@ echo "== JUnit: verifier (attestation 7 + wire/dual-proof fixtures) =="
 JAVA_HOME="$JAVA_HOME" "$GRADLE" :verifier:test --console=plain -q
 
 echo "== Circuit smoke: compile + witness-solve the live circuits =="
-for c in mono_faithful enroll enroll_ecdsa present_amortized enroll_rsa6144 enroll_p384 mono_faithful_ecdsa enroll_dsc_ecdsa mono_faithful_pss; do
+for c in mono_faithful enroll enroll_ecdsa present_amortized enroll_rsa6144 enroll_p384 mono_faithful_ecdsa enroll_dsc_ecdsa mono_faithful_pss enroll_secp256 enroll_bp384 enroll_secp521 enroll_bp512; do
   ( cd "circuits/$c" && "$NARGO" compile >/dev/null 2>&1 \
       && "$NARGO" execute _smoke >/dev/null 2>&1 \
       && echo "  ok: $c" ) || { echo "  FAIL: $c"; exit 1; }
@@ -35,7 +35,7 @@ fi
 echo "== CSCA trees: real cert leaf folds to the published per-algorithm root =="
 if command -v node >/dev/null 2>&1 && [ -f app/src/main/assets/masterlist/masterlist.pem ]; then
   ( cd verifier/js && node verify_tree.mjs ../../app/src/main/assets/masterlist/masterlist.pem ) \
-    | grep -q TREE_OK && echo "  ok: brainpool256 + p384 trees fold to root" \
+    | grep -q TREE_OK && echo "  ok: all EC trees fold to their published root" \
     || { echo "  FAIL: tree fold mismatch"; exit 1; }
 else
   echo "  skip: node or master list unavailable"
