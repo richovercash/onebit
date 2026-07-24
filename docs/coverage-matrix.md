@@ -67,6 +67,12 @@ exactly. The RSA-4096 root reproduces the previously published
 four roots are published in `verifier/allowlist.json`. Each circuit verifies a
 real synthetic cert of its type (CI smoke) and carries the F1 DSC-binding fix.
 
+**ECDSA-DSC documents** (the DSC key itself is ECDSA, not the CSCA) route to
+`enroll_dsc_ecdsa`: an RSA-4096 CSCA signs a P-256 DSC, committed as
+`Poseidon2(pubkey x,y)` so it pairs with `mono_faithful_ecdsa` at presentation.
+It reuses the rsa4096 tree/root (the CSCA is still RSA-4096). The router picks it
+by DSC key type; `EnrollRouteTest` covers it (RSA-4096 CSCA → P-256 DSC → SOD).
+
 **Uncovered (need their own enroll variant):** secp256r1 (20), brainpoolP384r1
 (52), secp521r1 (20), brainpoolP512r1 (17) — 109 unique EC CSCAs across 4 more
 curves. `build_tree.mjs` reports these in its `uncovered` census so the gap is

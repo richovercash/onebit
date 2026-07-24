@@ -103,6 +103,28 @@ public class EnrollRouteTest {
     @Test public void brainpool256() throws Exception { check("brainpoolP256r1", "SHA256withECDSA", "brainpool256", "enroll_ecdsa.json", 2207); }
     @Test public void p384()         throws Exception { check("secp384r1", "SHA384withECDSA", "p384",         "enroll_p384.json",    2271); }
 
+    @Test public void dscEcdsaP256() throws Exception {
+        // RSA-4096 CSCA -> P-256 DSC -> SOD (P-256 signed): uses the rsa4096 tree
+        // but the enroll_dsc_ecdsa circuit (commits the EC DSC point).
+        KeyPairGenerator rsa = KeyPairGenerator.getInstance("RSA"); rsa.initialize(4096);
+        KeyPair cscaKeys = rsa.generateKeyPair();
+        KeyPairGenerator ec = KeyPairGenerator.getInstance("EC", "BC");
+        ec.initialize(new ECGenParameterSpec("secp256r1"));
+        KeyPair dscKeys = ec.generateKeyPair();
+        X509Certificate csca = cert("CN=CSCA,C=UT", "CN=CSCA,C=UT", cscaKeys.getPublic(), cscaKeys.getPrivate(), "SHA256withRSA");
+        X509Certificate dsc = cert("CN=CSCA,C=UT", "CN=DSC,C=UT", dscKeys.getPublic(), cscaKeys.getPrivate(), "SHA256withRSA");
+        MessageDigest sha = MessageDigest.getInstance("SHA-256");
+        byte[] sod = new SODFile("SHA-256", "SHA256withECDSA",
+                Map.of(1, sha.digest(dg1), 2, sha.digest(new byte[]{2})), dscKeys.getPrivate(), dsc).getEncoded();
+
+        Witness.EnrollPlan plan = Witness.enrollRouted(dg1, sod, List.of(csca), stubTree(csca));
+        assertEquals("dsc_ecdsa", plan.alg);
+        assertEquals("rsa4096", plan.treeAlg);
+        assertEquals("zk/enroll_dsc_ecdsa.json", plan.circuitAsset);
+        assertEquals("zk/cscatree_rsa4096.json", plan.treeAsset);
+        assertEquals(2230, plan.witness.size()); // 2048+1+35*3+10+1+32+32+1
+    }
+
     @Test public void unsupportedCurveReturnsNull() throws Exception {
         Object[] c = chain("secp521r1", "SHA512withECDSA");
         X509Certificate csca = (X509Certificate) c[0];

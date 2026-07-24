@@ -7,6 +7,7 @@ import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import net.sf.scuba.tlv.TLVInputStream;
 import org.bouncycastle.cms.CMSSignedData;
@@ -136,23 +137,31 @@ public final class Witness {
         return w;
     }
 
-    /** What to prove for a given CSCA algorithm: which enroll circuit + tree,
-     *  and the assembled witness. `alg` also names the published root key
-     *  (csca_root_<alg>) the verifier checks. */
+    /** What to prove for a given CSCA→DSC chain: which enroll circuit, which
+     *  CSCA tree (and thus which published root the verifier checks), and the
+     *  assembled witness. `alg` tags the envelope; `treeAlg` names the tree/root
+     *  — usually the same, but the ECDSA-DSC variant proves a P-256 DSC under an
+     *  RSA-4096 CSCA, so it uses the rsa4096 tree with a distinct circuit. */
     public static final class EnrollPlan {
-        public final String alg;          // rsa4096 | rsa6144 | brainpool256 | p384
-        public final String circuitAsset; // zk/enroll.json etc
-        public final String treeAsset;    // zk/cscatree_<alg>.json
+        public final String alg;          // rsa4096 | rsa6144 | brainpool256 | p384 | dsc_ecdsa
+        public final String treeAlg;      // which cscatree/root: rsa4096 | rsa6144 | brainpool256 | p384
+        public final String circuitAsset; // zk/enroll*.json
+        public final String treeAsset;    // zk/cscatree_<treeAlg>.json
         public final List<String> witness;
-        EnrollPlan(String alg, List<String> w) {
+        EnrollPlan(String alg, String treeAlg, List<String> w) {
             this.alg = alg;
-            this.circuitAsset = "zk/enroll" + (alg.equals("rsa4096") ? "" :
-                    alg.equals("rsa6144") ? "_rsa6144" :
-                    alg.equals("brainpool256") ? "_ecdsa" : "_p384") + ".json";
-            this.treeAsset = "zk/cscatree_" + alg + ".json";
+            this.treeAlg = treeAlg;
+            this.circuitAsset = "zk/" + CIRCUIT.get(alg) + ".json";
+            this.treeAsset = "zk/cscatree_" + treeAlg + ".json";
             this.witness = w;
         }
     }
+
+    /** alg -> enroll circuit asset name. Shared shape with the verifier. */
+    public static final Map<String, String> CIRCUIT = Map.of(
+            "rsa4096", "enroll", "rsa6144", "enroll_rsa6144",
+            "brainpool256", "enroll_ecdsa", "p384", "enroll_p384",
+            "dsc_ecdsa", "enroll_dsc_ecdsa");
 
     static final java.security.Provider BC = new org.bouncycastle.jce.provider.BouncyCastleProvider();
     static final BigInteger BP256_PRIME = new BigInteger(
@@ -182,14 +191,12 @@ public final class Witness {
             try { dsc.verify(c.getPublicKey(), BC); csca = c; break; } catch (Exception ignored) { }
         }
         if (csca == null) throw new IllegalStateException("CSCA not found for DSC");
-        if (!(dsc.getPublicKey() instanceof RSAPublicKey)) return null; // ECDSA DSC -> enroll_dsc_ecdsa (not routed here)
 
         byte[] tbs = dsc.getTBSCertificate();
         if (tbs.length > 2048) throw new IllegalStateException("TBS " + tbs.length + "B exceeds cap");
-        BigInteger dscN = ((RSAPublicKey) dsc.getPublicKey()).getModulus();
 
-        // Classify the CSCA and build its algorithm-specific witness prefix.
-        String alg;
+        // 1. Classify the CSCA -> which tree/root, and its witness prefix.
+        String treeAlg;
         List<String> w = new ArrayList<>();
         bytes(w, pad(tbs, 2048));
         w.add(String.valueOf(tbs.length));
@@ -197,15 +204,15 @@ public final class Witness {
             BigInteger cscaN = ((RSAPublicKey) csca.getPublicKey()).getModulus();
             BigInteger cscaSig = new BigInteger(1, dsc.getSignature());
             int bits = cscaN.bitLength();
-            if (bits <= 4096) { alg = "rsa4096"; rsaFields(w, cscaSig, cscaN, 35, 4096); }
-            else if (bits <= 6144) { alg = "rsa6144"; rsaFields(w, cscaSig, cscaN, 52, 6144); }
+            if (bits <= 4096) { treeAlg = "rsa4096"; rsaFields(w, cscaSig, cscaN, 35, 4096); }
+            else if (bits <= 6144) { treeAlg = "rsa6144"; rsaFields(w, cscaSig, cscaN, 52, 6144); }
             else return null;
         } else if (csca.getPublicKey() instanceof java.security.interfaces.ECPublicKey) {
             java.security.interfaces.ECPublicKey ec = (java.security.interfaces.ECPublicKey) csca.getPublicKey();
             BigInteger prime = ((java.security.spec.ECFieldFp) ec.getParams().getCurve().getField()).getP();
             int clen;
-            if (prime.equals(BP256_PRIME)) { alg = "brainpool256"; clen = 32; }
-            else if (prime.equals(P384_PRIME)) { alg = "p384"; clen = 48; }
+            if (prime.equals(BP256_PRIME)) { treeAlg = "brainpool256"; clen = 32; }
+            else if (prime.equals(P384_PRIME)) { treeAlg = "p384"; clen = 48; }
             else return null;                                   // curve without a circuit
             BigInteger[] rs = ecSig(dsc.getSignature(), ec.getParams().getOrder());
             bytes(w, toBE(ec.getW().getAffineX(), clen));
@@ -214,21 +221,39 @@ public final class Witness {
             bytes(w, toBE(rs[1], clen));
         } else return null;
 
-        // Real Merkle path from this algorithm's tree.
+        // 2. Merkle path from the CSCA's tree.
         String spkiHex = hex(MessageDigest.getInstance("SHA-256").digest(csca.getPublicKey().getEncoded()));
-        com.google.gson.JsonObject tree = com.google.gson.JsonParser.parseString(treeLoader.apply(alg)).getAsJsonObject();
+        com.google.gson.JsonObject tree = com.google.gson.JsonParser.parseString(treeLoader.apply(treeAlg)).getAsJsonObject();
         com.google.gson.JsonObject paths = tree.getAsJsonObject("paths");
         if (!paths.has(spkiHex)) return null;                   // CSCA not in that tree
         com.google.gson.JsonObject entry = paths.getAsJsonObject(spkiHex);
         for (int i = 0; i < 10; i++) w.add(entry.getAsJsonArray("path").get(i).getAsString());
         w.add(String.valueOf(entry.get("dirs").getAsInt()));
 
-        // DSC pubkey (RSA-2048) to commit + its offset in the TBS (F1 binding).
-        limbsHex(w, dscN, 18);
-        int mo = indexOf(tbs, be256(dscN));
-        if (mo < 0) throw new IllegalStateException("DSC modulus not found in TBS");
-        w.add(String.valueOf(mo));
-        return new EnrollPlan(alg, w);
+        // 3. Commit the DSC key -> determines the circuit (RSA modulus, or EC point).
+        String alg;
+        if (dsc.getPublicKey() instanceof RSAPublicKey) {
+            BigInteger dscN = ((RSAPublicKey) dsc.getPublicKey()).getModulus();
+            limbsHex(w, dscN, 18);
+            int mo = indexOf(tbs, be256(dscN));
+            if (mo < 0) throw new IllegalStateException("DSC modulus not found in TBS");
+            w.add(String.valueOf(mo));
+            alg = treeAlg;                                      // enroll / _rsa6144 / _ecdsa / _p384
+        } else if (dsc.getPublicKey() instanceof java.security.interfaces.ECPublicKey && treeAlg.equals("rsa4096")) {
+            // P-256 DSC under an RSA-4096 CSCA -> enroll_dsc_ecdsa (commit the EC
+            // point; F1 binding is a byte-compare of x||y inside the TBS).
+            java.security.interfaces.ECPublicKey ec = (java.security.interfaces.ECPublicKey) dsc.getPublicKey();
+            byte[] x = toBE(ec.getW().getAffineX(), 32), y = toBE(ec.getW().getAffineY(), 32);
+            byte[] point = new byte[64];
+            System.arraycopy(x, 0, point, 0, 32);
+            System.arraycopy(y, 0, point, 32, 32);
+            int po = indexOf(tbs, point);
+            if (po < 0) throw new IllegalStateException("DSC EC point not found in TBS");
+            bytes(w, x); bytes(w, y);
+            w.add(String.valueOf(po));
+            alg = "dsc_ecdsa";
+        } else return null;                                     // EC DSC without a matching circuit
+        return new EnrollPlan(alg, treeAlg, w);
     }
 
     static void rsaFields(List<String> w, BigInteger sig, BigInteger n, int limbs, int modBits) {
