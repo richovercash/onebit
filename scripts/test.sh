@@ -41,4 +41,12 @@ else
   echo "  skip: node or master list unavailable"
 fi
 
+echo "== ECDSA-DSC presentation: real proof verifies via the verifier sidecar =="
+if command -v node >/dev/null 2>&1 && [ -f verifier/js/testdata/mfe_proof.bin ]; then
+  python3 scripts/split_proof.py verifier/js/testdata/mfe_proof.bin 5 \
+    | ( cd verifier/js && CIRCUIT=mono_faithful_ecdsa.json node verify.mjs ) \
+    | grep -q ZK_OK && echo "  ok: mono_faithful_ecdsa proof -> ZK_OK" \
+    || { echo "  FAIL: ecdsa presentation did not verify"; exit 1; }
+fi
+
 echo "ALL GREEN"
