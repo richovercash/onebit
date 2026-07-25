@@ -69,6 +69,56 @@ verifier** (replacing NFC for this product):
   libraries document the exact request/response shapes — the fastest way to get
   the wire format right instead of guessing.
 
+## Live DC-API probe result (2026-07-24) — the real barrier
+
+Built the DC-API verifier (`mdl` build flavor, `MdlEnrollActivity`) and fired a
+real request at the CA Wallet on the Pixel 6, asking for **only** `age_over_18` /
+`age_over_21`. What happened, from the wallet's own logs:
+
+- **The pipeline works.** The Android DC API routed our request to the CA Wallet
+  (`gov.ca.dmv.wallet/…dcapi.Activity`), which parsed it correctly:
+  `metadata: {"claims":[["org.iso.18013.5.1","age_over_18"],["…","age_over_21"]],
+  "dcql_cred_id":"mdl"}`. Our request format + minimal (no-PII) claim set are
+  accepted by the wallet's parser.
+- **It rejected on identity, not format:**
+  `dcapi.Activity: an error occurred… java.lang.Exception: unknown origin` (SpruceID
+  `Activity.kt:207`), returned to us as `GetCredentialUnknownException`, before any
+  user interaction.
+
+**Interpretation (confirmed on retry).** A second attempt that added
+`client_id: web-origin:…` and `expected_origins` to the request **changed
+nothing** — same `unknown origin`, and the wallet still logged only our claims,
+ignoring those fields. So the block is **not** our request body: it is the
+**Android DC-API caller origin**. The platform only hands a verified origin to
+the wallet when the caller is a **browser** (or an app holding the privileged,
+OEM-allowlisted `android.permission.CREDENTIAL_MANAGER_SET_ORIGIN`). A sideloaded
+app supplies no origin, so SpruceID sees none and throws `unknown origin`
+(`Activity.kt` onCreate). Sign-in state was ruled out — it failed identically
+with the wallet signed in.
+
+This is a **deliberate anti-phishing control in the DC-API design**, not a bug
+and not tweakable from our side: digital credentials are released only to callers
+whose origin the platform can attest (web origins / privileged apps).
+
+**What it means for the architecture.** CA's mDL is designed to be presented to
+an **origin-attested verifier** (the age-gated website via the browser DC API, or
+a registered OpenCred relying party) — *not* freely ingested by an arbitrary
+sovereign wallet. Our "wallet ingests the mDL once, derives one bit" model runs
+into this gate. Getting past it legitimately means one of:
+1. **Register as an authorized verifier** with a recognized origin (business
+   process with CA / the mDL ecosystem) — then the app-to-app ingest may work.
+2. **Be the website.** Run an OpenCred-style verifier at a real https origin that
+   receives the mDL; but then a *server* ingests it, not the user's wallet — a
+   different trust/privacy posture than the passport path.
+3. Confirm whether the `unknown origin` is a fixable request/`client_id` origin
+   detail vs. a hard allowlist (needs reading SpruceID's `processIntent` origin
+   logic / their reader docs).
+
+This is the honest state: **technically integrated up to the wallet's
+verifier-authorization gate, blocked there.** It mirrors the provisioning
+asymmetry — the passport is a bearer document you physically hold and read; the
+mDL is a wallet-mediated credential that only talks to recognized verifiers.
+
 ## Status vs the earlier demo
 
 The synthetic-mdoc demo proved the *parser + circuit* on made-up data with a fake

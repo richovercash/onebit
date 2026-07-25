@@ -47,8 +47,12 @@ public class MdlEnrollActivity extends Activity {
         new java.security.SecureRandom().nextBytes(n);
         String nonce = Base64.encodeToString(n, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
         // OID4VP request over the DC API — age booleans only, no PII.
+        // client_id + expected_origins: the DC-API/OID4VP way a verifier declares
+        // its origin so the wallet can bind + accept it (the "unknown origin" gate).
+        String origin = "https://onebit.zk";
         String req = "{\"requests\":[{\"protocol\":\"openid4vp-v1-unsigned\",\"data\":{"
                 + "\"response_type\":\"vp_token\",\"response_mode\":\"dc_api\",\"nonce\":\"" + nonce + "\","
+                + "\"client_id\":\"web-origin:" + origin + "\",\"expected_origins\":[\"" + origin + "\"],"
                 + "\"dcql_query\":{\"credentials\":[{\"id\":\"mdl\",\"format\":\"mso_mdoc\","
                 + "\"meta\":{\"doctype_value\":\"org.iso.18013.5.1.mDL\"},"
                 + "\"claims\":[{\"path\":[\"" + NS + "\",\"age_over_18\"]},"
