@@ -16,7 +16,7 @@ echo "== JUnit: verifier (attestation 7 + wire/dual-proof fixtures) =="
 JAVA_HOME="$JAVA_HOME" "$GRADLE" :verifier:test --console=plain -q
 
 echo "== Circuit smoke: compile + witness-solve the live circuits =="
-for c in mono_faithful enroll enroll_ecdsa present_amortized enroll_rsa6144 enroll_p384 mono_faithful_ecdsa enroll_dsc_ecdsa mono_faithful_pss enroll_secp256 enroll_bp384 enroll_secp521 enroll_bp512; do
+for c in mono_faithful enroll enroll_ecdsa present_amortized enroll_rsa6144 enroll_p384 mono_faithful_ecdsa enroll_dsc_ecdsa mono_faithful_pss enroll_secp256 enroll_bp384 enroll_secp521 enroll_bp512 commit_fields; do
   ( cd "circuits/$c" && "$NARGO" compile >/dev/null 2>&1 \
       && "$NARGO" execute _smoke >/dev/null 2>&1 \
       && echo "  ok: $c" ) || { echo "  FAIL: $c"; exit 1; }

@@ -48,6 +48,12 @@ tasks.register('dscEcdsaProbe', JavaExec) {
     systemProperty 'dir', project.rootDir.path + '/circuits/enroll_dsc_ecdsa'
 }
 
+tasks.register('mdlEnrollProbe', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'onebit.core.MdlEnrollProbe'
+    systemProperty 'dir', project.rootDir.path + '/circuits/commit_fields'
+}
+
 tasks.register('ecEnrollProbe', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'onebit.core.EcEnrollProbe'
