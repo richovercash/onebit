@@ -53,6 +53,10 @@ calls, learns one bit and an unlinkable per-site pseudonym, and stores nothing.
     mobile driver's license (ISO 18013-5) as a second source credential: the
     mDL trust chain (it mirrors the passport), the CBOR/COSE plumbing, and why
     the rest of the system doesn't change.
+12. **[mdl-ca-integration.md](mdl-ca-integration.md)** — the *real* California
+    mDL picture from an actual license on-device: the SpruceID CA DMV Wallet, the
+    OpenID4VP app-to-app presentation, CA's published IACA trust anchor, and the
+    OID4VP-reader integration that remains to build.
 
 **Reference / build notes**
 - **[stage-native-packaging.md](stage-native-packaging.md)** — how the ZK prover
