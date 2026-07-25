@@ -49,6 +49,10 @@ calls, learns one bit and an unlinkable per-site pseudonym, and stores nothing.
 10. **[coverage-matrix.md](coverage-matrix.md)** — which real passports/ID cards
     work today, by signature algorithm (RSA, ECDSA curves, RSA-PSS), what's
     proven end-to-end, and what's still missing.
+11. **[stage-mdl-enrollment.md](stage-mdl-enrollment.md)** — accepting a US
+    mobile driver's license (ISO 18013-5) as a second source credential: the
+    mDL trust chain (it mirrors the passport), the CBOR/COSE plumbing, and why
+    the rest of the system doesn't change.
 
 **Reference / build notes**
 - **[stage-native-packaging.md](stage-native-packaging.md)** — how the ZK prover
