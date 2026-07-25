@@ -2,7 +2,7 @@ plugins { id 'com.android.application' version '8.13.2' }
 
 android {
     namespace 'onebit.wallet'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'onebit.wallet'
@@ -10,6 +10,20 @@ android {
         targetSdk 35
         versionCode 1
         versionName '0.1'
+    }
+
+    // Two products from one core. `sovereign` = passport, GMS-free (GrapheneOS).
+    // `mdl` = adds the Digital Credentials API to ingest a real mDL from a wallet
+    // (Google Play services required — stock Android). Core (Mdl/Cbor/circuits/
+    // Seal/PassiveAuth) is shared in src/main; DC-API code lives in src/mdl.
+    flavorDimensions 'ingestion'
+    productFlavors {
+        sovereign { dimension 'ingestion'; isDefault true }
+        mdl {
+            dimension 'ingestion'
+            applicationIdSuffix '.mdl'
+            versionNameSuffix '-mdl'
+        }
     }
 
     compileOptions {
@@ -22,5 +36,8 @@ dependencies {
     implementation project(':core')
     implementation 'net.sf.scuba:scuba-sc-android:0.0.26' // IsoDepCardService
     implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1' // replaces Android's stripped BC
+    // mDL flavor only: Digital Credentials API verifier (pulls GMS).
+    mdlImplementation 'androidx.credentials:credentials:1.6.0-beta01'
+    mdlImplementation 'androidx.credentials:credentials-play-services-auth:1.6.0-beta01'
     testImplementation 'junit:junit:4.13.2'
 }

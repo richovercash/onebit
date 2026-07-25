@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Digital Credentials API verifier: pulls a real mDL from a wallet.
+             Exported for adb-driven testing; a shipped build would trigger it
+             internally from the presentation flow. -->
+        <activity
+            android:name="onebit.wallet.MdlEnrollActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
+</manifest>

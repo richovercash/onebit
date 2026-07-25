@@ -27,22 +27,42 @@ public final class Mdl {
     static final Provider BC = new org.bouncycastle.jce.provider.BouncyCastleProvider();
 
     public static final class MdlData {
-        public int dob;          // YYYYMMDD
-        public int expiry;       // YYYYMMDD
+        public final Map<String, Object> elements = new java.util.LinkedHashMap<>(); // verified disclosed elements
+        public int dob;          // YYYYMMDD (0 if birth_date not disclosed)
+        public int expiry;       // YYYYMMDD (0 if expiry_date not disclosed)
         public byte[] msoBytes;  // the MSO (COSE payload inner bstr) — doc-identity source
         public X509Certificate ds;
+        /** true iff the issuer-signed age_over_<n> boolean was disclosed and true. */
+        public boolean ageOver(int n) { return Boolean.TRUE.equals(elements.get("age_over_" + n)); }
     }
 
     public static final class MdlException extends RuntimeException {
         public MdlException(String m) { super(m); }
     }
 
-    /** Verify the mdoc and extract (dob, expiry). `trust` is the accepted IACA
-     *  root(s); the DS cert must verify under one of them. */
     @SuppressWarnings("unchecked")
+    static Map<Object, Object> asMap(Object o) { return (Map<Object, Object>) o; }
+
+    /** Verify a bare IssuerSigned mdoc structure against the trusted IACA root(s). */
     public static MdlData verify(byte[] issuerSignedCbor, java.util.Collection<X509Certificate> trust) {
+        return verifyIssuerSigned(asMap(Cbor.decode(issuerSignedCbor)), trust);
+    }
+
+    /** Verify an ISO 18013-5 DeviceResponse (the OID4VP / DC-API vp_token payload):
+     *  take documents[0].issuerSigned and verify it. This is what the wallet returns. */
+    @SuppressWarnings("unchecked")
+    public static MdlData verifyDeviceResponse(byte[] deviceResponseCbor, java.util.Collection<X509Certificate> trust) {
+        List<Object> docs = (List<Object>) asMap(Cbor.decode(deviceResponseCbor)).get("documents");
+        if (docs == null || docs.isEmpty()) throw new MdlException("DeviceResponse has no documents");
+        return verifyIssuerSigned(asMap(asMap(docs.get(0)).get("issuerSigned")), trust);
+    }
+
+    /** Core: verify IssuerAuth + IACA chain + bind every disclosed element to its
+     *  MSO value digest; returns all verified elements (no fixed required set, so a
+     *  presentation disclosing only age_over_18 works). */
+    @SuppressWarnings("unchecked")
+    static MdlData verifyIssuerSigned(Map<Object, Object> issuerSigned, java.util.Collection<X509Certificate> trust) {
         try {
-            Map<Object, Object> issuerSigned = (Map<Object, Object>) Cbor.decode(issuerSignedCbor);
             List<Object> auth = (List<Object>) issuerSigned.get("issuerAuth");
             byte[] protectedHdr = (byte[]) auth.get(0);
             Map<Object, Object> unprotected = (Map<Object, Object>) auth.get(1);
@@ -78,18 +98,15 @@ public final class Mdl {
             Map<Object, Object> nsDigests = (Map<Object, Object>)
                     ((Map<Object, Object>) mso.get("valueDigests")).get(NS);
 
-            // 4. Bind each data element: SHA256(#6.24(IssuerSignedItem)) == digest.
+            // 4. Bind each disclosed element: SHA256(#6.24(IssuerSignedItem)) == digest.
             Map<Object, Object> nameSpaces = (Map<Object, Object>) issuerSigned.get("nameSpaces");
-            byte[] items = itemsSpan(issuerSignedCbor);            // raw bytes of the ns array (for exact spans)
             MessageDigest sha = MessageDigest.getInstance("SHA-256");
             MdlData d = new MdlData();
             d.ds = ds;
             d.msoBytes = msoBytes;
-            boolean gotDob = false, gotExp = false;
             for (Object elem : (List<Object>) nameSpaces.get(NS)) {
                 // each elem is Tag(24, bstr(IssuerSignedItem)); re-encode to hash the exact bytes
-                Cbor.Tag t = (Cbor.Tag) elem;
-                byte[] itemBytes = (byte[]) t.v;
+                byte[] itemBytes = (byte[]) ((Cbor.Tag) elem).v;
                 byte[] tagged = Cbor.tag(24, Cbor.bstr(itemBytes));
                 Map<Object, Object> item = (Map<Object, Object>) Cbor.decode(itemBytes);
                 long digestID = (Long) item.get("digestID");
@@ -97,10 +114,12 @@ public final class Mdl {
                 if (want == null || !MessageDigest.isEqual(want, sha.digest(tagged)))
                     throw new MdlException("value digest mismatch for element " + item.get("elementIdentifier"));
                 String id = (String) item.get("elementIdentifier");
-                if (id.equals("birth_date")) { d.dob = fullDate(item.get("elementValue")); gotDob = true; }
-                else if (id.equals("expiry_date")) { d.expiry = fullDate(item.get("elementValue")); gotExp = true; }
+                Object val = item.get("elementValue");
+                d.elements.put(id, val);
+                if (id.equals("birth_date")) d.dob = fullDate(val);
+                else if (id.equals("expiry_date")) d.expiry = fullDate(val);
             }
-            if (!gotDob || !gotExp) throw new MdlException("mDL missing birth_date/expiry_date");
+            if (d.elements.isEmpty()) throw new MdlException("mDL disclosed no elements");
             return d;
         } catch (MdlException e) {
             throw e;
@@ -123,9 +142,6 @@ public final class Mdl {
         return new org.bouncycastle.asn1.DERSequence(new org.bouncycastle.asn1.ASN1Encodable[]{
                 new org.bouncycastle.asn1.ASN1Integer(r), new org.bouncycastle.asn1.ASN1Integer(s)}).getEncoded();
     }
-
-    // reserved for a future exact-span optimization; unused today.
-    static byte[] itemsSpan(byte[] cbor) { return cbor; }
 
     private Mdl() {}
 }
