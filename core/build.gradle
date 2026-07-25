@@ -52,6 +52,7 @@ tasks.register('mdlEnrollProbe', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'onebit.core.MdlEnrollProbe'
     systemProperty 'dir', project.rootDir.path + '/circuits/commit_fields'
+    systemProperty 'assets', project.rootDir.path + '/app/src/main/assets/mdl'
 }
 
 tasks.register('ecEnrollProbe', JavaExec) {

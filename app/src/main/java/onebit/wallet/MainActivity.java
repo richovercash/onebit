@@ -269,6 +269,44 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Amortized Tier A enrollment from an ISO 18013-5 mDL (mobile driver's
+     *  license): verify the mdoc (Mdl passive auth), derive (dob, expiry,
+     *  doc_hash), compute C via commit_fields, seal acred.bin. Presentations then
+     *  use present_amortized unchanged — an mDL credential is indistinguishable
+     *  from a passport one on the wire. */
+    private void enrollMdl() {
+        try {
+            byte[] mdoc = readAssetBytes("mdl/test_mdl.cbor");
+            byte[] iacaDer = readAssetBytes("mdl/test_iaca.der");
+            java.security.cert.X509Certificate iaca = (java.security.cert.X509Certificate)
+                    java.security.cert.CertificateFactory.getInstance("X.509")
+                            .generateCertificate(new java.io.ByteArrayInputStream(iacaDer));
+            onebit.core.Mdl.MdlData d = onebit.core.Mdl.verify(mdoc, java.util.List.of(iaca));
+            java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
+            if (!g1.exists()) { say("mDL enroll skipped (SRS missing)."); return; }
+            java.math.BigInteger P = new java.math.BigInteger(
+                    "21888242871839275222246405745257275088548364400416034343698204186575808495617");
+            java.math.BigInteger docHash = new java.math.BigInteger(1,
+                    java.security.MessageDigest.getInstance("SHA-256").digest(d.msoBytes)).mod(P);
+            java.math.BigInteger k = new java.math.BigInteger(250, new java.security.SecureRandom());
+            java.math.BigInteger salt = new java.math.BigInteger(250, new java.security.SecureRandom());
+            String w = d.dob + "\n" + d.expiry + "\n" + docHash + "\n" + k + "\n" + salt;
+            byte[] proof = NativeProver.prove(readAsset("zk/commit_fields.json"), w, g1.getAbsolutePath(), false);
+            String c = pubField(proof, 0);
+            String blob = d.dob + "\n" + d.expiry + "\n" + docHash + "\n" + k + "\n" + salt + "\n" + c;
+            Seal.writeFile(new java.io.File(getFilesDir(), "acred.bin").toPath(), blob.getBytes());
+            say("mDL ENROLLED (ISO 18013-5) — dob " + d.dob + ", expiry " + d.expiry
+                    + ". Presentations now ~0.8s (Tier A), unchanged circuit.");
+        } catch (Throwable ex) {
+            android.util.Log.w("ONEBIT_MDL", "mdl enroll: " + ex);
+            say("mDL enroll failed: " + ex);
+        }
+    }
+
+    private byte[] readAssetBytes(String path) throws Exception {
+        try (java.io.InputStream in = getAssets().open(path)) { return in.readAllBytes(); }
+    }
+
     /** Read public input #idx (decimal) from a noir-rs proof
      *  [uint32 num_public][pub][proof]. */
     static String pubField(byte[] proof, int idx) {
@@ -301,6 +339,11 @@ public class MainActivity extends Activity {
         // Read the result: adb logcat -s ONEBIT_NATIVE  ->  PROVE OK [recursion-775k]
         if ("benchp".equals(u.getHost())) {
             nativeProveTest("zk/circuit_p.json", "zk/wit_p.txt", "recursion-775k");
+            return;
+        }
+        // Demo: enroll the bundled test mDL (Tier A). adb shell am start -d onebit://enrollmdl
+        if ("enrollmdl".equals(u.getHost())) {
+            new Thread(this::enrollMdl).start();
             return;
         }
         String c = u.getQueryParameter("c");

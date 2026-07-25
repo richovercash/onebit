@@ -45,6 +45,15 @@ public final class MdlEnrollProbe {
         // Real mdoc passive auth (COSE verify + IACA chain + digest binding).
         Mdl.MdlData d = Mdl.verify(mdoc, List.of(iaca));
 
+        // Optionally emit the mDL + its IACA as bundled wallet assets (demo).
+        String assets = System.getProperty("assets");
+        if (assets != null) {
+            java.nio.file.Files.createDirectories(java.nio.file.Path.of(assets));
+            java.nio.file.Files.write(java.nio.file.Path.of(assets, "test_mdl.cbor"), mdoc);
+            java.nio.file.Files.write(java.nio.file.Path.of(assets, "test_iaca.der"), iaca.getEncoded());
+            System.out.println("wrote test_mdl.cbor (" + mdoc.length + "B) + test_iaca.der to " + assets);
+        }
+
         BigInteger P = new BigInteger(
                 "21888242871839275222246405745257275088548364400416034343698204186575808495617");
         // doc_hash: a deterministic per-document field from the MSO (mDL's identity
