@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Circuit P v1 (P1.0): presentation proof WITH in-circuit verification of the
 // enrollment proof pi_E. This is the recursion that makes the credential
 // binding real -- the attributes we prove predicates over are cryptographically

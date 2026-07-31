@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment circuit, ECDSA-DSC variant. Completes the faithful ECDSA chain:
 // a CSCA (RSA-4096 here) signs a DSC whose key is ECDSA (secp256r1 / P-256), and
 // we commit that DSC pubkey so mono_faithful_ecdsa (DSC->SOD) can reference it.

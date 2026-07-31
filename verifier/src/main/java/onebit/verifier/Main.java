@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package onebit.verifier;
 
 import java.nio.file.Files;

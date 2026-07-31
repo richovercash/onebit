@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment commitment helper: the exact (doc_hash, C) computation Circuit E
 // performs, factored out so the wallet can persist the credential fields
 // (dob, expiry, doc_hash, k, salt, C) that Circuit P later reopens. Kept

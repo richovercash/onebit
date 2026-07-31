@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package onebit.core;
 
 import static org.junit.Assert.assertEquals;

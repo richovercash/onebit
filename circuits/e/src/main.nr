@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Circuit E v0 (P1.0): enrollment proof. Proves the document is validly
 // signed by a DSC that chains to R_icao, AND that commitment C opens to the
 // document's attributes. Output: C (public here; a PRIVATE input to Circuit P,

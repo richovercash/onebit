@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Faithful presentation circuit, RSA-PSS DSC variant. Identical to mono_faithful
 // (real ICAO CMS passive auth: DG1 hash in eContent, eContent hash in
 // signedAttrs) except the DSC signs signedAttrs with RSA-PSS (RSASSA-PSS,

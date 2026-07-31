@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment circuit, P-384 (secp384r1) CSCA variant. 4 of the 588 bundled
 // master-list CSCAs are P-384. Same shape as enroll_ecdsa (brainpoolP256r1):
 // CSCA (in the master-list tree) signs the DSC, commit the DSC pubkey. P-384

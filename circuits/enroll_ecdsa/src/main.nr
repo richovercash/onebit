@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment circuit, ECDSA CSCA variant (brainpoolP256r1) -- 160 of the 588
 // bundled CSCAs are brainpoolP256r1 (German/EU standard). Same shape as the RSA
 // enroll circuit (ADR-005): CSCA(in master-list tree) signs the DSC, commit the

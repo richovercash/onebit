@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment circuit, brainpoolP512r1 CSCA variant. brainpoolP512r1 CSCAs sign
 // with SHA-512; coordinates/scalars are 64 bytes (512 bits). Same shape as the
 // other ECDSA enroll variants. The leaf packs each 64-byte coordinate into four

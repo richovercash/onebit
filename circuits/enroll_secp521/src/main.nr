@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment circuit, P-521 (secp521r1) CSCA variant. secp521r1 CSCAs sign with
 // SHA-512; coordinates/scalars are 66 bytes (521 bits). Same shape as the other
 // ECDSA enroll variants; only the curve, hash, and coordinate size change. The

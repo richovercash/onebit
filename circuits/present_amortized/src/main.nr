@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Amortized presentation circuit (P1.0 follow-up). This is Circuit P v1's tail
 // -- the rebind + predicate + nullifier -- with the ~775k-gate in-circuit
 // verification of pi_E REMOVED. The document's provenance is established ONCE at

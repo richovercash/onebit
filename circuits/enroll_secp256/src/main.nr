@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment circuit, ECDSA CSCA variant (secp256r1 (NIST P-256)) -- 160 of the 588
 // bundled CSCAs are secp256r1 (NIST P-256) (German/EU standard). Same shape as the RSA
 // enroll circuit (ADR-005): CSCA(in master-list tree) signs the DSC, commit the

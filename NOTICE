@@ -1,0 +1,30 @@
+One Bit Verifier
+Copyright (c) 2026 the One Bit Verifier authors
+
+This product includes software developed by third parties, under their own
+licenses. Nothing here overrides those licenses; they are listed for compliance.
+
+Runtime dependencies
+--------------------
+- jMRTD (org.jmrtd:jmrtd)                 — LGPL-2.1-or-later
+     e-passport (ICAO 9303) BAC/PACE + data-group parsing.
+- SCUBA (net.sf.scuba:scuba-sc-android)   — LGPL-2.1-or-later
+    smartcard / IsoDep card service used by jMRTD.
+- Bouncy Castle (org.bouncycastle:bcprov-jdk18on, bcpkix-jdk18on)
+                                          — Bouncy Castle License (MIT-style)
+    crypto provider: RSA/ECDSA passive auth, CMS, X.509, EC curve math.
+
+LGPL note: jMRTD and SCUBA are LGPL. This project is AGPL-3.0 (LGPL-compatible).
+Recipients may replace those libraries with compatible versions; they are used as
+libraries and not modified in this repository.
+
+Native proving
+--------------
+- Noir / Barretenberg (noir-rs, bb)       — Apache-2.0 / MIT
+    UltraHonk proving + the compiled ACIR circuits. Fetched/vendored via scripts,
+    not part of this repository's copyrighted source (see .gitignore).
+
+Circuits
+--------
+The circuits under circuits/ and the protocol spec (SPEC_one_bit_verifier.md) are
+licensed Apache-2.0 (see circuits/LICENSE and LICENSE-APACHE), not AGPL-3.0.

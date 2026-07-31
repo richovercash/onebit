@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment circuit (ADR-005): the expensive CSCA->DSC trust check, run ONCE
 // at enrollment (10-50s acceptable), not per presentation. Proves a CSCA in the
 // published master list signed the DSC, and commits the DSC public key so the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Generic credential commitment: C = Poseidon2(dob, expiry, doc_hash, k, salt).
 // Used by enrollment paths where the attributes are supplied directly (mDL: dob
 // and expiry come from mdoc data elements, not from an in-circuit DG1 parse).

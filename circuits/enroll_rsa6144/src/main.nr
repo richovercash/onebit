@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Enrollment circuit, RSA-6144 CSCA variant. 6 of the 588 bundled master-list
 // CSCAs are RSA-6144. Identical shape to the RSA-4096 enroll (ADR-005): CSCA (in
 // the master-list tree) signs the DSC, commit the DSC pubkey. Only the CSCA key

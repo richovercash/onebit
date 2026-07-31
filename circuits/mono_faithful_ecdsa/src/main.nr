@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Faithful presentation circuit, ECDSA-DSC variant. Same real ICAO CMS passive
 // auth as mono_faithful (DG1 hash in eContent, eContent hash in signedAttrs),
 // but the DSC signs the SOD with ECDSA (secp256r1 + SHA-256) instead of

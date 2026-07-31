@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package onebit.wallet;
 
 import android.app.Activity;

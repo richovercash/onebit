@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Faithful monolithic presentation circuit -- models real ICAO CMS passive
 // authentication (unlike mono_slim which signed eContent directly).
 //

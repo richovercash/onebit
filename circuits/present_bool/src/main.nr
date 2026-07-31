@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Amortized presentation for a BOOLEAN age credential (mDL path). Unlike
 // present_amortized, the sealed attributes are not (dob, expiry) but the
 // disclosed age boolean and the threshold it attests -- because the mDL flow
