@@ -19,6 +19,7 @@ tasks.register('demoServer', JavaExec) {
     args project.rootDir.path + '/verifier/allowlist.json'
     systemProperty 'onebit.jsdir', "${project.rootDir}/verifier/js"
     systemProperty 'onebit.node', System.getenv('HOME') + '/.nvm/versions/node/v20.20.1/bin/node'
+    systemProperty 'onebit.personbound', System.getProperty('onebit.personbound', 'false')  // -Donebit.personbound=true → strict site
 }
 
 java {

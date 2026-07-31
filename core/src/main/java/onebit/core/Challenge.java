@@ -30,6 +30,7 @@ public final class Challenge {
     public final int icaoRootMinVersion;
     public final String attestationTier;
     public final boolean modeBAccepted;
+    public final boolean personBound;   // policy requires a person-bound (face-matched) credential, not a bearer one
     public final String sig;
     public final byte[] spki;   // verifier's SubjectPublicKeyInfo (DER); sha256 == verifier_id
 
@@ -64,12 +65,15 @@ public final class Challenge {
             throw new RefusalException("verifier_id must be spki sha256 hex");
         }
         String epoch = asString(o, "epoch");
-        if (!epoch.matches("\\d{4}-\\d{2}-\\d{2}")) {
-            throw new RefusalException("epoch must be YYYY-MM-DD");
+        // YYYY-MM-DD (daily) or YYYY-MM-DD-HH (hourly) — the verifier chooses the
+        // rotation window. Finer = more unlinkable; coarser = better rate-limiting.
+        if (!epoch.matches("\\d{4}-\\d{2}-\\d{2}(-\\d{2})?")) {
+            throw new RefusalException("epoch must be YYYY-MM-DD or YYYY-MM-DD-HH");
         }
 
         JsonObject p = asObject(o, "policy");
-        requireKeys(p, Set.of("predicate", "value", "icao_root_min_version", "attestation", "mode_b_accepted"), "policy");
+        requireKeys(p, Set.of("predicate", "value", "icao_root_min_version", "attestation", "mode_b_accepted"),
+                Set.of("person_bound"), "policy");
         String predicate = asString(p, "predicate");
         if (!GRAMMAR.contains(predicate)) {
             throw new RefusalException("predicate not in grammar: " + predicate);
@@ -90,6 +94,16 @@ public final class Challenge {
         if (!(mb instanceof JsonPrimitive) || !((JsonPrimitive) mb).isBoolean()) {
             throw new RefusalException("mode_b_accepted must be boolean");
         }
+        // Optional assurance flag: when true the verifier requires a person-bound
+        // (face-matched-at-enrollment) credential, not a bearer one. Absent ⇒ bearer OK.
+        boolean personBound = false;
+        if (p.has("person_bound")) {
+            JsonElement pb = p.get("person_bound");
+            if (!(pb instanceof JsonPrimitive) || !((JsonPrimitive) pb).isBoolean()) {
+                throw new RefusalException("person_bound must be boolean");
+            }
+            personBound = pb.getAsBoolean();
+        }
 
         byte[] spki;
         try {
@@ -99,7 +113,7 @@ public final class Challenge {
         }
 
         Challenge c = new Challenge(nonce, origin, verifierId, epoch, predicate, value,
-                minRoot, tier, mb.getAsBoolean(), asString(o, "sig"), spki);
+                minRoot, tier, mb.getAsBoolean(), personBound, asString(o, "sig"), spki);
         return c;
     }
 
@@ -111,12 +125,19 @@ public final class Challenge {
 
     private static void requireKeys(JsonObject o, Set<String> allowed, String where)
             throws RefusalException {
+        requireKeys(o, allowed, java.util.Set.of(), where);
+    }
+
+    /** Whitelist: unknown keys (outside required ∪ optional) are refusal; every
+     *  required key must be present. Optional keys may be absent. */
+    private static void requireKeys(JsonObject o, Set<String> required, Set<String> optional, String where)
+            throws RefusalException {
         for (Map.Entry<String, JsonElement> e : o.entrySet()) {
-            if (!allowed.contains(e.getKey())) {
+            if (!required.contains(e.getKey()) && !optional.contains(e.getKey())) {
                 throw new RefusalException("unknown key in " + where + ": " + e.getKey());
             }
         }
-        for (String k : allowed) {
+        for (String k : required) {
             if (!o.has(k)) throw new RefusalException("missing key in " + where + ": " + k);
         }
     }
@@ -153,15 +174,25 @@ public final class Challenge {
     public static String signedContent(String nonceB64, String origin, String verifierId,
             String epoch, String predicate, int value, int icaoRootMinVersion,
             String attestationTier, boolean modeBAccepted) {
-        return "onebit-challenge-v1\n" + nonceB64 + "\n" + origin + "\n" + verifierId + "\n"
+        return signedContent(nonceB64, origin, verifierId, epoch, predicate, value,
+                icaoRootMinVersion, attestationTier, modeBAccepted, false);
+    }
+
+    public static String signedContent(String nonceB64, String origin, String verifierId,
+            String epoch, String predicate, int value, int icaoRootMinVersion,
+            String attestationTier, boolean modeBAccepted, boolean personBound) {
+        String s = "onebit-challenge-v1\n" + nonceB64 + "\n" + origin + "\n" + verifierId + "\n"
                 + epoch + "\n" + predicate + "\n" + value + "\n" + icaoRootMinVersion + "\n"
                 + attestationTier + "\n" + modeBAccepted;
+        // Appended only when true, so bearer challenges keep the exact original tuple
+        // (backward compatible); tampering with the flag still breaks the signature.
+        return personBound ? s + "\n" + personBound : s;
     }
 
     public String signedContent() {
         return signedContent(java.util.Base64.getEncoder().encodeToString(nonce), origin,
                 verifierId, epoch, predicate, value, icaoRootMinVersion, attestationTier,
-                modeBAccepted);
+                modeBAccepted, personBound);
     }
 
     /** Wallet-side authenticity check (V5, fail-closed): the challenge's `sig`
@@ -189,7 +220,9 @@ public final class Challenge {
 
     private Challenge(byte[] nonce, String origin, String verifierId, String epoch,
                       String predicate, int value, int icaoRootMinVersion,
-                      String attestationTier, boolean modeBAccepted, String sig, byte[] spki) {
+                      String attestationTier, boolean modeBAccepted, boolean personBound,
+                      String sig, byte[] spki) {
+        this.personBound = personBound;
         this.nonce = nonce;
         this.origin = origin;
         this.verifierId = verifierId;

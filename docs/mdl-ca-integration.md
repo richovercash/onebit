@@ -119,6 +119,94 @@ verifier-authorization gate, blocked there.** It mirrors the provisioning
 asymmetry — the passport is a bearer document you physically hold and read; the
 mDL is a wallet-mediated credential that only talks to recognized verifiers.
 
+## Live custom-scheme run (2026-07-25) — full pipeline works; trust anchor is the last gate
+
+Switched from the DC API to the ISO 18013-7 **custom-scheme OID4VP** flow
+(`MdlSchemeActivity`) with a **signed request (JAR)** and response encryption. This
+got us *past* the "unknown origin" gate and all the way through a real presentation
+of the user's actual California mDL. What now works, confirmed on the Pixel 6 Pro
+against the real CA DMV Wallet, requesting **only `age_over_18`**:
+
+1. **Signed request accepted.** `mdoc-openid4vp://` + RFC 9101 JAR (ES256, x5c reader
+   cert, `client_id=x509_san_dns:onebit.zk`). Cleared every validation gate. Fixes
+   found empirically from the wallet's own errors:
+   - `response_mode` must be **`direct_post.jwt`** (the wallet rejects `fragment`).
+   - response encryption must be **`A256GCM`** (the wallet rejects `A128GCM`).
+2. **User consent shown + approved** — the wallet's real "share age over 18" dialog.
+3. **Encrypted mdoc returned.** Wallet POSTs an ECDH-ES / A256GCM **JWE** to our
+   localhost `response_uri` (`http://127.0.0.1:<port>/cb`, a tiny `ServerSocket`).
+   Cleartext-to-loopback is allowed; the wallet connected and posted.
+4. **We decrypt it.** `onebit.core.Jwe` (ECDH-ES + Concat-KDF + AES-GCM, unit-tested
+   against RFC 7518 App C) recovers the `DeviceResponse` CBOR.
+5. **The DMV's issuer signature over `age_over_18` VERIFIES.** `Mdl.verifyIssuerSigned`
+   passes the IssuerAuth (COSE_Sign1) check against the DS public key — i.e. we
+   cryptographically confirmed **"California DMV IACA mdoc Signer" signed this age
+   attestation**. The disclosed set is exactly `age_over_18`, no PII.
+
+**The trust anchor — and how we closed it.** The real DS is `CN=California DMV IACA
+mdoc Signer` issued by `CN=California DMV IACA Root, O=CA-DMV`. The mdoc x5chain ships
+**only the DS** (not the root). CA does **not** publish the IACA Root cert on the open
+web — `dmv.ca.gov`'s "IACA Root Certificate" pages (prod + test) serve a `did:jwk` that
+only re-gives the VC-Signer *leaf*; `crl.dmv.ca.gov/iaca/root` serves a CRL; the
+`did:web` doc has no x5c chain; the developer page has no verifier enrollment. ISO
+18013-5 distributes IACA roots via the **AAMVA VICAL** to enrolled verifiers.
+
+We bootstrapped the root **public key** by cross-validation (`Mdl.crossValidatedRootKey`):
+ECDSA public-key recovery on the live DS yields <=2 candidate signer keys; we accept
+only the one that **also** verifies the *independently* dmv.ca.gov-published VC-Signer
+(same issuer). A wrong candidate verifying a second, independent CA signature is
+cryptographically negligible, so the survivor is genuinely CA's root key — established
+from two independent CA artifacts, not the credential vouching for itself. Unit-tested
+in `MdlKeyRecoveryTest` (recovery, cross-validation, and a negative case).
+
+**GRANT achieved (2026-07-25).** Live on the Pixel 6 Pro against the real CA DMV Wallet:
+`mdoc DS: California DMV IACA mdoc Signer` -> `IACA root bootstrapped via
+cross-validation` -> `CA mDL VERIFIED via direct_post.jwt - age_over_18=true`. Full
+chain on the genuine credential; only `age_over_18` disclosed; nothing persisted.
+
+**Two honest caveats.**
+1. **Trust anchor is a demo bootstrap, not a VICAL assertion.** It cryptographically
+   proves the DS was signed by the same key that signed CA's published VC-Signer;
+   production should pin the AAMVA VICAL root instead (drop-in: pass a real root cert
+   to `anchorOf(...)` instead of `crossValidatedRootKey(...)`).
+2. **Background socket + cached-app freezer — RESOLVED.** The `direct_post.jwt`
+   localhost `response_uri` server is frozen by Android's cached-app freezer while the
+   wallet is foreground. Fixed with `KeepAliveService`, a bare `dataSync` foreground
+   service started before the wallet launch: a running FGS makes the whole process
+   perceptible, so the activity's socket thread is freezer-exempt (the FGS holds no
+   logic — the exemption is from its state). Re-verified with the freezer **enabled**
+   (`cached_apps_freezer enabled`): GRANT still succeeds. No adb workaround needed.
+
+## Wired into the one-bit credential (2026-07-25)
+
+The verified mDL is now a first-class credential source, byte-identical to the
+passport on the wire. Because the mDL flow requests ONLY `age_over_18` (no dob, per
+the privacy rule), the credential commits the **boolean + threshold**, not a dob:
+
+- **Enroll** (`MdlSchemeActivity.enrollBool`): after the GRANT, `C =
+  Poseidon2([over=1, threshold=18, doc_hash, k, salt])` via the existing
+  `commit_fields` circuit (the two u32 slots hold `over`/`threshold`), sealed to
+  `acred.bin` + `credtype.txt="bool"`.
+- **Present** (`circuits/present_bool`): reopens C, asserts `over==1` and
+  `threshold==age_min` (so an 18+ credential can't answer a 21 check), emits the
+  verifier/epoch-scoped nullifier. Same ABI as `present_amortized`, so `Present.java`
+  only switches the circuit asset by `credtype`.
+- **Verified live:** `PROVE OK zk/present_bool.json in 451 ms` from a signed
+  `age_gte 18` challenge against the mDL-enrolled credential. Sub-second, offline, one
+  bit + nullifier — no wallet contact after enrollment.
+- **Verifier accepts it (loop closed):** `VerifySdk` treats `present_bool` as Tier-A
+  amortized (4 public inputs `[ctx, current, age_min, N]`, same checks as
+  `present_amortized`); the JS sidecar (`verify.mjs` + `verifier/js/present_bool.json`)
+  returns `ZK_OK`. The response envelope reports `circuit=present_bool` (Present.java
+  derives it from the amortized circuit name — a hardcoded `present_amortized` here was
+  the first-attempt DENY).
+- **Full DemoServer round-trip GRANTED (2026-07-25):** gate page -> deep link ->
+  on-device `present_bool` proof + hardware attestation + fingerprint + device_sig ->
+  `VerifySdk.verify` -> `GRANT e2e=5944ms`, `chain=[predicate over enrolled commitment
+  (Tier A)]`. The ACCESS GRANTED page renders on the phone. One bit + nullifier, no PII.
+  (Both apps claim `onebit://`; drive the challenge at `onebit.wallet.mdl` explicitly to
+  avoid the chooser.)
+
 ## Status vs the earlier demo
 
 The synthetic-mdoc demo proved the *parser + circuit* on made-up data with a fake

@@ -41,12 +41,17 @@ final class Present {
 
     private final Activity a;
     private final Consumer<String> say;
+    private final Runnable onProving;   // fired once all refusal checks pass, before proving begins
     private boolean amortized;   // Tier A fast path: acred.bin enrolled
+    private String amortCircuit = "zk/present_amortized.json"; // or present_bool for mDL boolean creds
     private String faithfulCircuit = "mono_faithful"; // or _pss / _ecdsa by DSC type
 
-    Present(Activity a, Consumer<String> say) {
+    Present(Activity a, Consumer<String> say) { this(a, say, () -> {}); }
+
+    Present(Activity a, Consumer<String> say, Runnable onProving) {
         this.a = a;
         this.say = say;
+        this.onProving = onProving;
     }
 
     void start(String challengeJson) {
@@ -62,6 +67,14 @@ final class Present {
             say.accept("REFUSED (V5): verifier signature invalid — challenge not authentic.");
             return;
         }
+        // Assurance gate (wallet-side, upfront): a person-bound policy needs a face-matched
+        // credential. Today's credentials are bearer-only, so refuse HERE — before proving or
+        // collecting a fingerprint — so a rejecting site gets no proof, no nullifier, no auth.
+        if (c.personBound && !new java.io.File(a.getFilesDir(), "personbound.txt").exists()) {
+            say.accept("REFUSED: this site requires a face-matched (person-bound) ID.\n"
+                    + "Your credential is bearer-only — nothing was sent.");
+            return;
+        }
         if (NativeProver.loadError != null) {
             say.accept("Native prover unavailable: " + NativeProver.loadError);
             return;
@@ -75,6 +88,13 @@ final class Present {
                     new java.io.File(a.getFilesDir(), "presalg.txt").toPath()),
                     StandardCharsets.UTF_8).trim();
         } catch (Exception e) { faithfulCircuit = "mono_faithful"; }
+        // mDL credentials commit a boolean (not dob/expiry) -> present_bool, same ABI.
+        try {
+            if (new String(java.nio.file.Files.readAllBytes(
+                    new java.io.File(a.getFilesDir(), "credtype.txt").toPath()),
+                    StandardCharsets.UTF_8).trim().equals("bool"))
+                amortCircuit = "zk/present_bool.json";
+        } catch (Exception e) { amortCircuit = "zk/present_amortized.json"; }
         java.io.File docWit = new java.io.File(a.getFilesDir(), "docwit.txt");
         if (!amortized && (!cred.contains("k") || !docWit.exists())) {
             say.accept("No credential enrolled — read a document first.");
@@ -85,6 +105,7 @@ final class Present {
             say.accept("Missing SRS (g1_big.dat) in app files dir.");
             return;
         }
+        onProving.run();   // all checks passed — now it's safe to show the "sealing" progress stage
         say.accept(c.display() + (amortized ? "\nProving (amortized, ~0.8s)…"
                 : "\nProving (native, ~2.5s foreground)…"));
 
@@ -96,11 +117,15 @@ final class Present {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
                 wl.acquire(120_000);
 
-                String circuit = readAsset(amortized ? "zk/present_amortized.json" : "zk/" + faithfulCircuit + ".json");
+                String circuitName = amortized ? amortCircuit : "zk/" + faithfulCircuit + ".json";
+                String circuit = readAsset(circuitName);
                 String witness = amortized ? buildAmortizedWitness(c) : buildWitness(cred, c);
+                android.util.Log.i("ONEBIT_PRESENT", "proving circuit=" + circuitName + " amortized=" + amortized);
                 long p0 = System.currentTimeMillis();
                 byte[] proofBytes = NativeProver.prove(circuit, witness, g1.getAbsolutePath(), false);
                 long proveMs = System.currentTimeMillis() - p0;
+                android.util.Log.i("ONEBIT_PRESENT", "PROVE OK " + circuitName + " in " + proveMs
+                        + " ms, N=" + fieldHex(proofBytes, 3));
 
                 // proofBytes = [public_inputs (5*32B)][proof]; keep whole so the
                 // verifier can reconstruct {proof, publicInputs}. N is pub #3.
@@ -108,6 +133,7 @@ final class Present {
                 say.accept("Proof in " + proveMs + " ms. Confirm with fingerprint.");
                 a.runOnUiThread(() -> signAndSend(c, proofBytes, nullifier, proveMs, t0));
             } catch (Throwable t) {
+                android.util.Log.w("ONEBIT_PRESENT", "PROVE FAIL: " + t);
                 say.accept("PROVE FAIL (closed): " + t);
             } finally {
                 if (wl.isHeld()) wl.release();
@@ -150,10 +176,13 @@ final class Present {
 
     private void signAndSend(Challenge c, byte[] proof, String nullifier, long proveMs, long t0) {
         try {
-            String alias = "kv-" + c.verifierId;
-            KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
+            // Ephemeral per-presentation key: fresh, hardware-attested, deleted right
+            // after sending. No persistent per-site key ⇒ no on-device record of which
+            // sites you've answered (strengthens the "no logs anywhere" / double-anonymity story).
+            final String alias = "kv-eph-" + Long.toString(Math.abs(new java.security.SecureRandom().nextLong()), 36);
+            final KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(null);
-            if (!ks.containsAlias(alias)) Attest.generate(alias, c.nonce, true);
+            Attest.generate(alias, c.nonce, true);
 
             Signature sig = Signature.getInstance("SHA256withECDSA");
             sig.initSign(((KeyStore.PrivateKeyEntry) ks.getEntry(alias, null)).getPrivateKey());
@@ -180,6 +209,7 @@ final class Present {
                                         response.getBytes(StandardCharsets.UTF_8),
                                         Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
                                 a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                                try { ks.deleteEntry(alias); } catch (Exception ignore) {} // ephemeral: keep no trace
                                 say.accept("Presented in " + (System.currentTimeMillis() - t0)
                                         + " ms (proof " + proveMs + " ms).");
                             } catch (Exception e) {
@@ -189,6 +219,7 @@ final class Present {
 
                         @Override
                         public void onAuthenticationError(int code, CharSequence msg) {
+                            try { ks.deleteEntry(alias); } catch (Exception ignore) {} // don't leak the ephemeral key
                             say.accept("Auth error: " + msg);
                         }
                     });
@@ -224,12 +255,17 @@ final class Present {
                 .put("attestation_chain", chain)
                 .put("mode", "A")
                 .put("tier", "A")
-                .put("circuit", amortized ? "present_amortized" : faithfulCircuit)
+                .put("circuit", amortized
+                        ? amortCircuit.substring(3, amortCircuit.length() - 5)  // zk/<name>.json -> <name>
+                        : faithfulCircuit)
                 // Amortized: provenance established at enrollment + attested (T3);
                 // no per-presentation enroll proof. Faithful: dual-proof chain.
                 .put("enroll_proof", amortized ? "" : enrollProofB64())
                 .put("enroll_alg", amortized ? "" : enrollAlg())
                 .put("binding", amortized ? "attested-enrollment" : "document")
+                // person-bound only if a face-match enrollment marker was written (future,
+                // regulated tier); today's credentials are bearer, so this is false.
+                .put("person_bound", new java.io.File(a.getFilesDir(), "personbound.txt").exists())
                 .toString();
     }
 

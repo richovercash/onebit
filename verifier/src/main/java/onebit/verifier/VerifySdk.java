@@ -48,6 +48,13 @@ public final class VerifySdk {
             String expectedCtx = Nullifier.ctx(c.verifierId, c.epoch).toString();
             if (!expectedCtx.equals(pi.get("ctx").getAsString())) throw new IllegalStateException("ctx mismatch");
 
+            // Assurance level: a person_bound policy rejects bearer credentials (ones not
+            // face-matched to the document holder at enrollment). Absent ⇒ bearer OK.
+            boolean personBoundCred = r.has("person_bound") && r.get("person_bound").getAsBoolean();
+            if (c.personBound && !personBoundCred) {
+                throw new IllegalStateException("policy requires a person-bound credential; this one is bearer-only");
+            }
+
             // 2. ZK proof (native). Two presentation circuits are accepted:
             //  - mono_faithful: 5 pub [ctx,current,age_min,N,dsc_root] + a separate
             //    enroll proof -> full CSCA->DSC->SOD chain proven in ZK.
@@ -55,7 +62,11 @@ public final class VerifySdk {
             //    provenance was established once at enrollment and is attested (T3),
             //    not re-proven per presentation. See docs/amortized-enrollment.md.
             String circuit = r.has("circuit") ? r.get("circuit").getAsString() : "mono_faithful";
-            boolean amortized = "present_amortized".equals(circuit);
+            // Amortized (Tier A) family: 4 public inputs [ctx, current, age_min, N].
+            // present_amortized commits (dob, expiry); present_bool commits the mDL
+            // age boolean + threshold (no dob, per the privacy rule).
+            java.util.Set<String> AMORTIZED = java.util.Set.of("present_amortized", "present_bool");
+            boolean amortized = AMORTIZED.contains(circuit);
             // Faithful family: mono_faithful (RSA PKCS1) / _pss / _ecdsa — all 5
             // public inputs [ctx, current, age_min, N, dsc_commit].
             java.util.Set<String> FAITHFUL = java.util.Set.of(
@@ -64,7 +75,7 @@ public final class VerifySdk {
                 throw new IllegalStateException("unknown presentation circuit: " + circuit);
             }
             int pubCount = amortized ? 4 : 5;
-            String circuitJson = amortized ? "present_amortized.json" : circuit + ".json";
+            String circuitJson = circuit + ".json";
 
             byte[] proofBytes = Base64.getDecoder().decode(r.get("proof").getAsString());
             String proofStr = new String(proofBytes, 0, Math.min(4, proofBytes.length), StandardCharsets.UTF_8);

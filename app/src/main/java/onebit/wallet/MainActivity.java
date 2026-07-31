@@ -7,6 +7,9 @@ import android.nfc.Tag;
 import android.nfc.tech.IsoDep;
 import android.os.Bundle;
 import android.text.InputType;
+import android.text.method.PasswordTransformationMethod;
+import android.view.Gravity;
+import android.graphics.drawable.GradientDrawable;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -38,8 +41,28 @@ import onebit.core.PassiveAuth;
 public class MainActivity extends Activity {
 
     private EditText docNo, dob, expiry;
+    private final java.util.List<Runnable> mrzHiders = new java.util.ArrayList<>();   // mask each MRZ field
     private TextView status;
     private NfcAdapter nfc;
+
+    // --- migrated Signal UI: three stages (tap / verify / done) ---
+    private android.widget.FrameLayout root;
+    private android.view.View tapView, verifyView, doneView;
+    private DotMatrixView verifyMatrix;   // the loader's twinkle; fills as steps complete
+    private LinearLayout debugBox;
+    private float d;
+    static final int BG = 0xFF0E0E0E, SCREEN = 0xFF161616, INFO = 0xFFECECEC, INK = 0xFF0B0B0B,
+            MUTED = 0xFF8C8C8C, MUTEDL = 0xFF7C7C7C, WHITE = 0xFFF4F3F1, FAINT = 0xFF6A6A6A,
+            ORANGE = 0xFFFF5A00, ORANGE_DK = 0xFFC64700, LINE2 = 0xFF3A3A3A;
+    static final int STAGE_TAP = 0, STAGE_VERIFY = 1, STAGE_DONE = 2;
+    private int dp(float v) { return Math.round(v * d); }
+    private TextView tv(String s, int color, float size, String family, float ls) {
+        TextView t = new TextView(this);
+        t.setText(s); t.setTextColor(color); t.setTextSize(size);
+        if (ls != 0) t.setLetterSpacing(ls);
+        t.setTypeface(android.graphics.Typeface.create(family, android.graphics.Typeface.BOLD));
+        return t;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,80 +74,280 @@ public class MainActivity extends Activity {
         Security.insertProviderAt(new BouncyCastleProvider(), 1);
 
         if (getActionBar() != null) getActionBar().hide();
+        d = getResources().getDisplayMetrics().density;
+        getWindow().setStatusBarColor(SCREEN);
+        getWindow().setNavigationBarColor(SCREEN);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
-        root.setPadding(pad, pad, pad, pad);
-        // targetSdk 35 forces edge-to-edge: keep the form out from under the
-        // status bar / keyboard by padding with the live insets.
-        root.setOnApplyWindowInsetsListener((v, insets) -> {
-            android.graphics.Insets in = insets.getInsets(
-                    android.view.WindowInsets.Type.systemBars()
-                            | android.view.WindowInsets.Type.ime());
-            v.setPadding(pad + in.left, pad + in.top, pad + in.right, pad + in.bottom);
-            return android.view.WindowInsets.CONSUMED;
-        });
-
-        docNo = field(root, "Document number");
-        LinearLayout dates = new LinearLayout(this);
-        dates.setOrientation(LinearLayout.HORIZONTAL);
-        dob = field(dates, "Birth YYMMDD");
-        expiry = field(dates, "Expiry YYMMDD");
-        dob.setInputType(InputType.TYPE_CLASS_NUMBER);
-        expiry.setInputType(InputType.TYPE_CLASS_NUMBER);
-        expiry.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
-        root.addView(dates);
-        android.widget.Button attest = new android.widget.Button(this);
-        attest.setText("Attest device key (T3 demo)");
-        attest.setOnClickListener(v -> Attest.run(this, "demo-verifier-01", this::say));
-        root.addView(attest);
-
-        android.widget.Button nativeBtn = new android.widget.Button(this);
-        nativeBtn.setText("Native prove (slim circuit, JNI)");
-        nativeBtn.setOnClickListener(v -> nativeProveTest("zk/mono_slim.json", "zk/wit_slim.txt", "slim"));
-        root.addView(nativeBtn);
-
-        // P1.0 spike: native (multi-threaded) recursive Circuit P v1 prove-time.
-        // The WASM WebView bench (below) fell back to single-thread (~93s on P6P);
-        // this is the number that actually matters for presentations.
-        android.widget.Button pBtn = new android.widget.Button(this);
-        pBtn.setText("Native prove (Circuit P v1 recursion, 775k)");
-        pBtn.setOnClickListener(v -> nativeProveTest("zk/circuit_p.json", "zk/wit_p.txt", "recursion-775k"));
-        root.addView(pBtn);
-
-        addBench(root, "Benchmark: recursion (Circuit P v1, 775k)",
-                "c=circuit_p_v1.json&i=bench_p_inputs.json&l=recursion-775k");
-        addBench(root, "Benchmark: monolithic (Option A, 177k)",
-                "c=circuit_mono.json&i=mono_inputs.json&l=monolithic-177k");
-
-        status = new TextView(this);
-        status.setTextIsSelectable(true);
-        status.setText("Fill MRZ fields, then hold document to the phone.");
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(status);
-        root.addView(scroll);
+        root = new android.widget.FrameLayout(this);
+        root.setBackgroundColor(BG);
+        tapView = buildTapView();
+        verifyView = buildVerifyView();
+        doneView = buildDoneView();
+        root.addView(tapView);
+        root.addView(verifyView);
+        root.addView(doneView);
         setContentView(root);
+        showStage(STAGE_TAP);
 
-        SharedPreferences p = getPreferences(MODE_PRIVATE);
-        docNo.setText(p.getString("doc", ""));
-        dob.setText(p.getString("dob", ""));
-        expiry.setText(p.getString("exp", ""));
-
+        // MRZ is session-only PII: never prefilled from disk, never persisted (see enroll path).
         android.text.TextWatcher watcher = new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            public void afterTextChanged(android.text.Editable s) { say(readiness()); }
+            public void afterTextChanged(android.text.Editable s) { updateReady(); }
         };
         docNo.addTextChangedListener(watcher);
         dob.addTextChangedListener(watcher);
         expiry.addTextChangedListener(watcher);
-        say(readiness());
+        updateReady();
 
         nfc = NfcAdapter.getDefaultAdapter(this);
-        if (nfc == null) status.setText("No NFC on this device.");
-
         handleDeepLink(getIntent());
+    }
+
+    private TextView tapNote;
+
+    private void updateReady() { if (tapNote != null) tapNote.setText(readiness()); }
+
+    private void showStage(int stage) {
+        runOnUiThread(() -> {
+            if (stage == STAGE_VERIFY && verifyMatrix != null) verifyMatrix.setProgress(0.06f); // reset fill
+            tapView.setVisibility(stage == STAGE_TAP ? android.view.View.VISIBLE : android.view.View.GONE);
+            verifyView.setVisibility(stage == STAGE_VERIFY ? android.view.View.VISIBLE : android.view.View.GONE);
+            doneView.setVisibility(stage == STAGE_DONE ? android.view.View.VISIBLE : android.view.View.GONE);
+        });
+    }
+
+    // ---- STAGE: passport tap ----
+    private android.view.View buildTapView() {
+        ScrollView sv = new ScrollView(this);
+        sv.setFillViewport(true);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(24), dp(50), dp(24), dp(24));
+        sv.addView(col);
+
+        TextView kick = tv("●  PASSPORT", ORANGE, 11, "sans-serif-medium", 0.14f);
+        kick.setOnLongClickListener(v -> {  // long-press reveals dev tools
+            debugBox.setVisibility(debugBox.getVisibility() == android.view.View.GONE
+                    ? android.view.View.VISIBLE : android.view.View.GONE);
+            return true;
+        });
+        col.addView(kick);
+        TextView h = tv("Enter Passport Details", WHITE, 25, "sans-serif-black", -0.03f);
+        h.setPadding(0, dp(8), 0, dp(18));
+        h.setLineSpacing(0, 1.04f);
+        col.addView(h);
+
+        mrzHiders.clear();
+        docNo = darkField("Document number");
+        // passport numbers are ICAO-9303 alphanumeric (letters allowed) -> text keyboard,
+        // but CAPS + visible-password so the keyboard never suggests or stores it.
+        docNo.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        col.addView(revealRow(docNo));
+
+        LinearLayout dates = new LinearLayout(this);
+        dates.setOrientation(LinearLayout.HORIZONTAL);
+        dob = darkField("DOB YYMMDD");
+        expiry = darkField("Exp YYMMDD");
+        dob.setInputType(InputType.TYPE_CLASS_NUMBER);
+        expiry.setInputType(InputType.TYPE_CLASS_NUMBER);
+        dob.setTextSize(13.5f); expiry.setTextSize(13.5f);   // fit "Expiry YYMMDD" beside the eye
+        expiry.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        dates.addView(revealRow(dob), new LinearLayout.LayoutParams(0, -2, 1f));
+        dates.addView(new android.view.View(this), new LinearLayout.LayoutParams(dp(10), 1));
+        dates.addView(revealRow(expiry), new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams datesLp = new LinearLayout.LayoutParams(-1, -2);
+        datesLp.topMargin = dp(20);   // 20dp between the passport number and the date row
+        col.addView(dates, datesLp);
+
+        // primary action: hide the details, then cue the NFC tap
+        TextView scan = tv("Scan Passport", 0xFF111111, 15, "sans-serif-medium", 0f);
+        scan.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
+        scan.setGravity(Gravity.CENTER);
+        scan.setPadding(0, dp(15), 0, dp(15));
+        GradientDrawable sb = new GradientDrawable();
+        sb.setColor(ORANGE); sb.setCornerRadius(dp(13));
+        scan.setBackground(sb);
+        scan.setOnClickListener(v -> onScanClicked());
+        LinearLayout.LayoutParams scanLp = new LinearLayout.LayoutParams(-1, -2);
+        scanLp.topMargin = dp(28);
+        col.addView(scan, scanLp);
+
+        TextView cap = tv("Hold it to the back of your phone", MUTED, 12.5f, "sans-serif", 0f);
+        cap.setGravity(Gravity.CENTER);
+        cap.setPadding(0, dp(12), 0, 0);
+        col.addView(cap);
+
+        tapNote = new TextView(this);
+        tapNote.setTextColor(FAINT); tapNote.setTextSize(12.5f);
+        tapNote.setGravity(Gravity.CENTER);
+        tapNote.setPadding(0, dp(10), 0, dp(8));
+        col.addView(tapNote);
+
+        debugBox = new LinearLayout(this);
+        debugBox.setOrientation(LinearLayout.VERTICAL);
+        debugBox.setVisibility(android.view.View.GONE);
+        addDbg(debugBox, "Attest device key (T3 demo)", v -> Attest.run(this, "demo-verifier-01", this::say));
+        addDbg(debugBox, "Native prove (slim, JNI)", v -> nativeProveTest("zk/mono_slim.json", "zk/wit_slim.txt", "slim"));
+        addDbg(debugBox, "Native prove (recursion 775k)", v -> nativeProveTest("zk/circuit_p.json", "zk/wit_p.txt", "recursion-775k"));
+        addBench(debugBox, "Bench: recursion", "c=circuit_p_v1.json&i=bench_p_inputs.json&l=recursion-775k");
+        addBench(debugBox, "Bench: monolithic", "c=circuit_mono.json&i=mono_inputs.json&l=monolithic-177k");
+        col.addView(debugBox);
+        return sv;
+    }
+
+    private EditText darkField(String hint) {
+        EditText e = new EditText(this);
+        e.setHint(hint); e.setHintTextColor(FAINT); e.setTextColor(WHITE); e.setTextSize(15);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF1B1B1B); bg.setCornerRadius(dp(11)); bg.setStroke(dp(1), LINE2);
+        e.setBackground(bg);
+        e.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = dp(8);
+        e.setLayoutParams(lp);
+        return e;
+    }
+
+    /** Wrap a sensitive field with an inline lucide eye/eye-off toggle. Defaults to
+     *  REVEAL; each field also registers a hider so "Scan Passport" can mask them all. */
+    private android.view.View revealRow(EditText e) {
+        e.setPadding(dp(14), dp(12), dp(40), dp(12));                    // room for the eye icon
+        android.widget.FrameLayout f = new android.widget.FrameLayout(this);
+        f.addView(e, new android.widget.FrameLayout.LayoutParams(-1, -2));
+
+        EyeIcon eye = new EyeIcon(this);
+        // bounded height (not MATCH_PARENT — that stretches the wrap-content row)
+        android.widget.FrameLayout.LayoutParams elp = new android.widget.FrameLayout.LayoutParams(
+                dp(40), dp(44), Gravity.END | Gravity.CENTER_VERTICAL);
+        f.addView(eye, elp);
+
+        Runnable hide = () -> { e.setTransformationMethod(new PasswordTransformationMethod()); eye.setOff(true); };
+        Runnable reveal = () -> { e.setTransformationMethod(null); eye.setOff(false); };
+        reveal.run();                    // default: reveal mode
+        mrzHiders.add(hide);
+        eye.setOnClickListener(v -> {
+            if (eye.isOff()) reveal.run(); else hide.run();
+            e.setSelection(e.getText().length());   // keep the caret at the end after toggling
+        });
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = dp(12);
+        f.setLayoutParams(lp);
+        return f;
+    }
+
+    /** "Scan Passport": hide the entered details, drop the keyboard, and cue the tap.
+     *  The actual read is NFC-triggered (onTag); this arms the privacy state. */
+    private void onScanClicked() {
+        for (Runnable hide : mrzHiders) hide.run();     // fields -> hidden
+        android.view.inputmethod.InputMethodManager imm =
+                getSystemService(android.view.inputmethod.InputMethodManager.class);
+        if (imm != null && getCurrentFocus() != null)
+            imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
+        String ready = readiness();
+        tapNote.setText(ready.startsWith("Ready") ? "Hold it to the back of your phone." : ready);
+    }
+
+    private void addDbg(LinearLayout box, String label, android.view.View.OnClickListener onClick) {
+        TextView b = new TextView(this);
+        b.setText(label); b.setTextColor(MUTED); b.setTextSize(12);
+        b.setTypeface(android.graphics.Typeface.MONOSPACE);
+        b.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable bg = new GradientDrawable(); bg.setStroke(dp(1), LINE2); bg.setCornerRadius(dp(8));
+        b.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(8);
+        b.setLayoutParams(lp);
+        b.setOnClickListener(v -> { showStage(STAGE_VERIFY); onClick.onClick(v); });
+        box.addView(b);
+    }
+
+    // ---- STAGE: verify & seal (twinkle loader + live status) ----
+    private android.view.View buildVerifyView() {
+        android.widget.FrameLayout f = new android.widget.FrameLayout(this);
+        f.setBackgroundColor(SCREEN);
+        verifyMatrix = new DotMatrixView(this);   // uniform loader twinkle, fills with progress
+        verifyMatrix.setRising(false);
+        verifyMatrix.setDensity(0.0f, 1.0f);
+        verifyMatrix.setTwinkle(0.15f, 0.5f, 1.5f, 0.11f);   // loader look (twinkle lab)
+        verifyMatrix.setProgress(0.06f);          // starts nearly empty; bump() fills it in
+        f.addView(verifyMatrix, new android.widget.FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.VERTICAL);
+        top.setPadding(dp(24), dp(50), dp(24), dp(24));
+        top.addView(tv("●  READING PASSPORT", ORANGE, 11, "sans-serif-medium", 0.14f));
+        TextView vh = tv("Verifying & sealing", WHITE, 26, "sans-serif-black", -0.03f);
+        vh.setPadding(0, dp(8), 0, 0);
+        top.addView(vh);
+        f.addView(top);
+
+        status = new TextView(this);
+        status.setTextColor(WHITE); status.setTextSize(13.5f);
+        status.setLineSpacing(0, 1.25f);
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setBackgroundColor(0xE60E0E0E);
+        bottom.setPadding(dp(24), dp(18), dp(24), dp(30));
+        bottom.addView(status);
+        android.widget.FrameLayout.LayoutParams blp =
+                new android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        f.addView(bottom, blp);
+        return f;
+    }
+
+    // ---- STAGE: done (dot-matrix "18+" payoff) ----
+    private android.view.View buildDoneView() {
+        LinearLayout rootv = new LinearLayout(this);
+        rootv.setOrientation(LinearLayout.VERTICAL);
+        rootv.setBackgroundColor(BG);
+
+        android.widget.FrameLayout disp = new android.widget.FrameLayout(this);
+        disp.setBackgroundColor(SCREEN);
+        DotMatrixView mx = new DotMatrixView(this);
+        mx.setTopClear(0.42f);
+        mx.setRising(true);                       // sealed payoff: rich rising field under "18+"
+        mx.setDensity(0.27f, 1.0f);
+        mx.setTwinkle(0.07f, 0.75f, 1.9f, 0.17f);
+        disp.addView(mx, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(24), dp(50), dp(24), dp(24));
+        hero.addView(tv("●  SEALED ON THIS DEVICE", ORANGE, 11, "sans-serif-medium", 0.14f));
+        TextView giant = new TextView(this);
+        giant.setText("18+");
+        giant.setTextColor(WHITE);
+        giant.setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL));
+        giant.setTextSize(84);
+        giant.setLetterSpacing(-0.04f);
+        giant.setPadding(0, dp(8), 0, 0);
+        android.text.SpannableString ss = new android.text.SpannableString("18+");
+        ss.setSpan(new android.text.style.ForegroundColorSpan(ORANGE), 2, 3, 0);
+        giant.setText(ss);
+        hero.addView(giant);
+        disp.addView(hero, new android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+        rootv.addView(disp, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.VERTICAL);
+        bar.setBackgroundColor(INFO);
+        bar.setPadding(dp(22), dp(18), dp(22), dp(24));
+        bar.addView(tv("●  AGE CREDENTIAL", MUTEDL, 10.5f, "sans-serif-medium", 0.10f));
+        TextView v = tv("Over 18 — verified", INK, 18, "sans-serif-medium", -0.02f);
+        v.setPadding(0, dp(3), 0, dp(3));
+        bar.addView(v);
+        bar.addView(tv("SEALED · SECURE HARDWARE", MUTEDL, 10.5f, "sans-serif-medium", 0.06f));
+        TextView done = tv("Done", WHITE, 15, "sans-serif-medium", 0);
+        done.setGravity(Gravity.CENTER); done.setPadding(0, dp(15), 0, dp(15));
+        GradientDrawable db = new GradientDrawable(); db.setColor(0xFF111111); db.setCornerRadius(dp(13));
+        done.setBackground(db);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-1, -2); dlp.topMargin = dp(16);
+        done.setLayoutParams(dlp);
+        done.setOnClickListener(x -> { startActivity(new android.content.Intent(this, WelcomeActivity.class)); finish(); });
+        bar.addView(done);
+        rootv.addView(bar, new LinearLayout.LayoutParams(-1, -2));
+        return rootv;
     }
 
     @Override
@@ -230,39 +453,38 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Amortized Tier A enrollment: run the `commit` circuit to compute
-     *  (C, doc_hash) exactly as Circuit E does, then SE-seal the 6 credential
-     *  fields (dob, expiry, doc_hash, k, salt, C) that present_amortized reopens.
-     *  One-time; provenance is carried by passive auth (already verified) +
-     *  attestation, so no per-presentation recursion. */
+    /** Amortized Tier A enrollment — BOOLEAN commit (no birthdate retained). We
+     *  resolve the birthdate only to compute the age bit, then commit
+     *  C = Poseidon2([over, threshold, doc_hash, k, salt]) via commit_fields and
+     *  seal it (over, threshold, doc_hash, k, salt, C) + credtype="bool". The dob is
+     *  never stored — presentations use present_bool, identical to the mDL path.
+     *  Provenance is carried by passive auth (already verified) + attestation. */
     private void enrollAmortized(byte[] dg1, onebit.core.Witness.Doc wd,
                                  PassiveAuth.MrzData d, java.time.LocalDate t) {
         try {
             java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
             if (!g1.exists()) { say("Amortized enroll skipped (SRS missing)."); return; }
             java.time.LocalDate dob = Mrz.resolve(d.dateOfBirth, t);
-            java.time.LocalDate exp = Mrz.resolve(d.dateOfExpiry, t);
             int dobI = dob.getYear() * 10000 + dob.getMonthValue() * 100 + dob.getDayOfMonth();
-            int expI = exp.getYear() * 10000 + exp.getMonthValue() * 100 + exp.getDayOfMonth();
             int enrollDate = t.getYear() * 10000 + t.getMonthValue() * 100 + t.getDayOfMonth();
+            int threshold = 18;
+            int over = (dobI + threshold * 10000 <= enrollDate) ? 1 : 0;   // dob discarded after this
+
+            java.math.BigInteger P = new java.math.BigInteger(
+                    "21888242871839275222246405745257275088548364400416034343698204186575808495617");
+            java.math.BigInteger docHash = new java.math.BigInteger(1,
+                    java.security.MessageDigest.getInstance("SHA-256").digest(wd.eContent)).mod(P);
             java.math.BigInteger k = new java.math.BigInteger(250, new java.security.SecureRandom());
             java.math.BigInteger salt = new java.math.BigInteger(250, new java.security.SecureRandom());
 
-            // commit witness: dg1[93], econtent[1200], k, salt, enroll_date.
-            StringBuilder w = new StringBuilder();
-            for (byte b : dg1) w.append(b & 0xff).append('\n');
-            byte[] econ = new byte[1200];
-            System.arraycopy(wd.eContent, 0, econ, 0, Math.min(wd.eContent.length, 1200));
-            for (byte b : econ) w.append(b & 0xff).append('\n');
-            w.append(k).append('\n').append(salt).append('\n').append(enrollDate);
-
-            byte[] proof = NativeProver.prove(readAsset("zk/commit.json"), w.toString(),
-                    g1.getAbsolutePath(), false);
+            String w = over + "\n" + threshold + "\n" + docHash + "\n" + k + "\n" + salt;
+            byte[] proof = NativeProver.prove(readAsset("zk/commit_fields.json"), w, g1.getAbsolutePath(), false);
             String cField = pubField(proof, 0);   // C
-            String docHash = pubField(proof, 1);   // doc_hash
-            String blob = dobI + "\n" + expI + "\n" + docHash + "\n" + k + "\n" + salt + "\n" + cField;
+            String blob = over + "\n" + threshold + "\n" + docHash + "\n" + k + "\n" + salt + "\n" + cField;
             Seal.writeFile(new java.io.File(getFilesDir(), "acred.bin").toPath(), blob.getBytes());
-            say("Amortized credential enrolled — presentations now ~0.8s.");
+            java.nio.file.Files.write(new java.io.File(getFilesDir(), "credtype.txt").toPath(), "bool".getBytes());
+            say("Amortized credential enrolled (age " + threshold + "+ = " + (over == 1)
+                    + ") — ~0.8s presentations, no birthdate retained.");
         } catch (Throwable ex) {
             android.util.Log.w("ONEBIT_ACRED", "amortized enroll: " + ex);
             say("Amortized enroll skipped: " + ex);
@@ -320,13 +542,12 @@ public class MainActivity extends Activity {
      *  would let a custom prover mint arbitrary nullifiers (self-review F2). */
     private void enroll(PassiveAuth.MrzData d, java.time.LocalDate t) throws Exception {
         java.math.BigInteger k = new java.math.BigInteger(250, new java.security.SecureRandom());
-        java.time.LocalDate dob = Mrz.resolve(d.dateOfBirth, t);
-        java.time.LocalDate exp = Mrz.resolve(d.dateOfExpiry, t);
         String kSealed = android.util.Base64.encodeToString(
                 Seal.wrap(k.toString().getBytes()), android.util.Base64.NO_WRAP);
+        // Only the SE-wrapped nullifier key is persisted. Birth/expiry dates are NOT
+        // retained — they were dead PII (never read back); the age bit is committed in
+        // acred.bin (boolean) and the dob is discarded right after.
         getSharedPreferences("cred", MODE_PRIVATE).edit()
-                .putInt("dob", dob.getYear() * 10000 + dob.getMonthValue() * 100 + dob.getDayOfMonth())
-                .putInt("exp", exp.getYear() * 10000 + exp.getMonthValue() * 100 + exp.getDayOfMonth())
                 .putString("k", kSealed)
                 .apply();
     }
@@ -351,7 +572,9 @@ public class MainActivity extends Activity {
         String json = new String(android.util.Base64.decode(c,
                 android.util.Base64.URL_SAFE | android.util.Base64.NO_PADDING),
                 java.nio.charset.StandardCharsets.UTF_8);
-        new Present(this, this::say).start(json);
+        // Don't jump to the "sealing" screen yet — Present may refuse upfront (e.g. a
+        // person-bound policy). It calls back once all checks pass and proving begins.
+        new Present(this, this::say, () -> showStage(STAGE_VERIFY)).start(json);
     }
 
     /** null-free readiness message; "Ready" only when BAC inputs are usable. */
@@ -394,9 +617,12 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (nfc != null) {
+            android.os.Bundle opts = new android.os.Bundle();
+            // Wait longer before deciding the tag left — old/slow chips drop briefly mid-read.
+            opts.putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 5000);
             nfc.enableReaderMode(this, this::onTag,
                     NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B
-                            | NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, null);
+                            | NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, opts);
         }
     }
 
@@ -415,83 +641,108 @@ public class MainActivity extends Activity {
         String doc = docNo.getText().toString().trim();
         String birth = dob.getText().toString().trim();
         String exp = expiry.getText().toString().trim();
-        getPreferences(MODE_PRIVATE).edit()
-                .putString("doc", doc).putString("dob", birth).putString("exp", exp).apply();
+        // used only in-memory for the BAC key below — never written to disk.
+        showStage(STAGE_VERIFY);
         say("Tag detected, reading chip…");
         new Thread(() -> {
-            try {
-                IsoDep isoDep = IsoDep.get(tag);
-                isoDep.setTimeout(15000);
-                CardService cs = new IsoDepCardService(isoDep);
-                PassportService ps = new PassportService(cs,
-                        PassportService.NORMAL_MAX_TRANCEIVE_LENGTH,
-                        PassportService.DEFAULT_MAX_BLOCKSIZE, false, false);
-                ps.open();
-                BACKey bacKey = new BACKey(doc, birth, exp);
-                // PACE first (modern documents often disable BAC), BAC fallback.
-                boolean paceOk = false;
+            IsoDep isoDep = IsoDep.get(tag);
+            if (isoDep == null) { say("FAIL (closed): not an ISO-DEP e-passport chip."); return; }
+            isoDep.setTimeout(20000);       // older/slow chips need a longer transceive window
+            boolean pacePossible = true;    // probe PACE once; old BAC-only docs skip it on retries
+            Exception last = null;
+            for (int attempt = 1; attempt <= 3; attempt++) {
                 try {
-                    org.jmrtd.lds.CardAccessFile caf = new org.jmrtd.lds.CardAccessFile(
-                            ps.getInputStream(PassportService.EF_CARD_ACCESS));
-                    for (org.jmrtd.lds.SecurityInfo si : caf.getSecurityInfos()) {
-                        if (si instanceof org.jmrtd.lds.PACEInfo) {
-                            org.jmrtd.lds.PACEInfo pi = (org.jmrtd.lds.PACEInfo) si;
-                            say("PACE (" + pi.getObjectIdentifier() + ")…");
-                            ps.doPACE(org.jmrtd.PACEKeySpec.createMRZKey(bacKey),
-                                    pi.getObjectIdentifier(),
-                                    org.jmrtd.lds.PACEInfo.toParameterSpec(pi.getParameterId()),
-                                    pi.getParameterId());
-                            paceOk = true;
-                            break;
+                    if (!isoDep.isConnected()) isoDep.connect();
+                    CardService cs = new IsoDepCardService(isoDep);
+                    PassportService ps = new PassportService(cs,
+                            PassportService.NORMAL_MAX_TRANCEIVE_LENGTH,
+                            PassportService.DEFAULT_MAX_BLOCKSIZE, false, false);
+                    ps.open();
+                    BACKey bacKey = new BACKey(doc, birth, exp);
+                    boolean paceOk = false;
+                    if (pacePossible) {         // modern docs may be PACE-only; older ones are BAC-only
+                        try {
+                            org.jmrtd.lds.CardAccessFile caf = new org.jmrtd.lds.CardAccessFile(
+                                    ps.getInputStream(PassportService.EF_CARD_ACCESS));
+                            for (org.jmrtd.lds.SecurityInfo si : caf.getSecurityInfos()) {
+                                if (si instanceof org.jmrtd.lds.PACEInfo) {
+                                    org.jmrtd.lds.PACEInfo pi = (org.jmrtd.lds.PACEInfo) si;
+                                    say("PACE…");
+                                    ps.doPACE(org.jmrtd.PACEKeySpec.createMRZKey(bacKey),
+                                            pi.getObjectIdentifier(),
+                                            org.jmrtd.lds.PACEInfo.toParameterSpec(pi.getParameterId()),
+                                            pi.getParameterId());
+                                    paceOk = true;
+                                    break;
+                                }
+                            }
+                        } catch (Exception pe) {
+                            pacePossible = false;   // no CardAccess -> older BAC-only doc; don't re-probe on retries
+                            say("No PACE (older document) — using BAC…");
                         }
                     }
-                } catch (Exception e) {
-                    say("PACE unavailable (" + e.getMessage() + "), trying BAC…");
-                }
-                ps.sendSelectApplet(paceOk);
-                if (!paceOk) ps.doBAC(bacKey);
-                say("Access established, reading DG1 + SOD…");
-                byte[] dg1 = readAll(ps.getInputStream(PassportService.EF_DG1));
-                byte[] sod = readAll(ps.getInputStream(PassportService.EF_SOD));
-                say("Read OK (DG1 " + dg1.length + " B, SOD " + sod.length
-                        + " B). Running Passive Authentication…");
+                    ps.sendSelectApplet(paceOk);
+                    if (!paceOk) ps.doBAC(bacKey);
+                    say("Access established (try " + attempt + ") — reading DG1 + SOD…");
+                    byte[] dg1 = readAll(ps.getInputStream(PassportService.EF_DG1));
+                    byte[] sod = readAll(ps.getInputStream(PassportService.EF_SOD));
+                    say("Read OK (DG1 " + dg1.length + " B, SOD " + sod.length
+                            + " B). Running Passive Authentication…");
 
-                List<X509Certificate> masterList = loadMasterList();
-                if (masterList.isEmpty()) {
-                    say("FAIL (closed): master list is empty — drop CSCA certs in assets/masterlist/.");
-                    return;
+                    List<X509Certificate> masterList = loadMasterList();
+                    if (masterList.isEmpty()) {
+                        say("FAIL (closed): master list is empty — drop CSCA certs in assets/masterlist/.");
+                        return;
+                    }
+                    PassiveAuth.MrzData d = PassiveAuth.verify(dg1, sod, masterList);
+                    LocalDate t = LocalDate.now();
+                    enroll(d, t);
+                    try {
+                        onebit.core.Witness.Doc wd = onebit.core.Witness.extract(dg1, sod);
+                        android.util.Log.i("ONEBIT_COVERAGE", "sizes: eContent=" + wd.eContent.length
+                                + " signedAttrs=" + wd.signedAttrs.length + " modBits=" + wd.modulus.bitLength());
+                        // Persist the real document witness for faithful proving, SE-wrapped.
+                        java.util.List<String> docWit = onebit.core.Witness.presentationWitness(wd, 256, 128);
+                        Seal.writeFile(
+                                new java.io.File(getFilesDir(), "docwit.txt").toPath(),
+                                String.join("\n", docWit).getBytes());
+                        java.nio.file.Files.write(
+                                new java.io.File(getFilesDir(), "presalg.txt").toPath(), wd.presCircuit.getBytes());
+                        // Amortized Tier A credential: commit(bool) once, sealed; presentations
+                        // then run present_bool (~0.8s).
+                        enrollAmortized(dg1, wd, d, t);
+                        // Faithful CSCA→DSC enroll proof (Tier B, ADR-005) is OPTIONAL and needs a
+                        // large SRS; gate it so a small present-sized SRS can't make the native
+                        // prover abort (SIGABRT). Off by default.
+                        if (new java.io.File(getFilesDir(), "faithful").exists()) {
+                            say("Proving CSCA→DSC (enroll, ~10s)…");
+                            proveEnroll(dg1, sod, masterList, d);
+                        }
+                    } catch (Throwable ex) {
+                        android.util.Log.w("ONEBIT_COVERAGE", "witness: " + ex);
+                    }
+                    android.util.Log.i("ONEBIT_COVERAGE", "DSC: " + d.dscInfo
+                            + " | docType=" + d.documentCode);
+                    runOnUiThread(() -> {   // wipe the MRZ from the inputs once the bit is sealed
+                        docNo.setText(""); dob.setText(""); expiry.setText("");
+                    });
+                    showStage(STAGE_DONE);
+                    return;   // SUCCESS — done
+                } catch (Exception e) {
+                    last = e;
+                    android.util.Log.w("ONEBIT_READ", "read attempt " + attempt + " failed: " + e);
+                    if (attempt < 3) {
+                        say("Read hiccup (try " + attempt + "/3) — keep the passport still…");
+                        try { isoDep.close(); } catch (Exception ignore) {}
+                        try { Thread.sleep(400); isoDep.connect(); } catch (Exception ce) { last = ce; }
+                    }
                 }
-                PassiveAuth.MrzData d = PassiveAuth.verify(dg1, sod, masterList);
-                LocalDate t = LocalDate.now();
-                enroll(d, t);
-                try {
-                    onebit.core.Witness.Doc wd = onebit.core.Witness.extract(dg1, sod);
-                    android.util.Log.i("ONEBIT_COVERAGE", "sizes: eContent=" + wd.eContent.length
-                            + " signedAttrs=" + wd.signedAttrs.length + " modBits=" + wd.modulus.bitLength());
-                    // Persist the real document witness for faithful proving,
-                    // SE-wrapped (P1.5). The builder + circuit tag follow the DSC
-                    // signature type (RSA PKCS1 / RSA-PSS / secp256r1 ECDSA).
-                    java.util.List<String> docWit = onebit.core.Witness.presentationWitness(wd, 256, 128);
-                    Seal.writeFile(
-                            new java.io.File(getFilesDir(), "docwit.txt").toPath(),
-                            String.join("\n", docWit).getBytes());
-                    java.nio.file.Files.write(
-                            new java.io.File(getFilesDir(), "presalg.txt").toPath(), wd.presCircuit.getBytes());
-                    // Amortized Tier A credential: commit(attributes) once, sealed;
-                    // presentations then run present_amortized (~0.8s). See
-                    // docs/amortized-enrollment.md.
-                    enrollAmortized(dg1, wd, d, t);
-                    say("PASSIVE AUTHENTICATION OK — proving CSCA→DSC (enroll, ~10s)…");
-                    // Enrollment proof: CSCA(in master list)→DSC, once. ADR-005.
-                    proveEnroll(dg1, sod, masterList, d);
-                } catch (Throwable ex) {
-                    android.util.Log.w("ONEBIT_COVERAGE", "witness: " + ex);
-                }
-                android.util.Log.i("ONEBIT_COVERAGE", "DSC: " + d.dscInfo
-                        + " | docType=" + d.documentCode);
-            } catch (Exception e) {
-                say("FAIL (closed): " + e);
             }
+            String m = String.valueOf(last).toLowerCase();
+            String hint = (m.contains("bac") || m.contains("6300") || m.contains("6982") || m.contains("access denied"))
+                    ? "double-check the document number, date of birth and expiry — they must match the passport exactly"
+                    : "keep the passport flat and still on the upper-center back of the phone";
+            say("FAIL (closed) after 3 tries — " + hint + ".  [" + last + "]");
         }).start();
     }
 
@@ -518,6 +769,15 @@ public class MainActivity extends Activity {
     }
 
     private void say(String msg) {
-        runOnUiThread(() -> status.setText(msg));
+        android.util.Log.i("ONEBIT_READ", msg);   // durable trace (status flashes by on the UI)
+        runOnUiThread(() -> {
+            if (verifyView.getVisibility() == android.view.View.VISIBLE) {
+                status.setText(msg);
+                if (verifyMatrix != null) verifyMatrix.bump();   // each milestone rises the fill
+            } else {
+                // no progress screen up (e.g. an upfront refusal, before proving) — surface it
+                android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show();
+            }
+        });
     }
 }

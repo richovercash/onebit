@@ -3,9 +3,11 @@ package onebit.core;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.Provider;
+import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -43,25 +45,151 @@ public final class Mdl {
     @SuppressWarnings("unchecked")
     static Map<Object, Object> asMap(Object o) { return (Map<Object, Object>) o; }
 
+    /** Decides whether a DS certificate is trusted (chains to an accepted IACA). */
+    @FunctionalInterface public interface Anchor { boolean trusts(X509Certificate ds); }
+
+    /** Standard anchor: DS issuer matches a bundled IACA's subject and DS verifies under it. */
+    public static Anchor anchorOf(Collection<X509Certificate> trust) {
+        return ds -> {
+            for (X509Certificate iaca : trust) {
+                if (!ds.getIssuerX500Principal().equals(iaca.getSubjectX500Principal())) continue;
+                if (verifies(ds, iaca.getPublicKey())) return true;
+            }
+            return false;
+        };
+    }
+
     /** Verify a bare IssuerSigned mdoc structure against the trusted IACA root(s). */
-    public static MdlData verify(byte[] issuerSignedCbor, java.util.Collection<X509Certificate> trust) {
-        return verifyIssuerSigned(asMap(Cbor.decode(issuerSignedCbor)), trust);
+    public static MdlData verify(byte[] issuerSignedCbor, Collection<X509Certificate> trust) {
+        return verifyIssuerSigned(asMap(Cbor.decode(issuerSignedCbor)), anchorOf(trust));
     }
 
     /** Verify an ISO 18013-5 DeviceResponse (the OID4VP / DC-API vp_token payload):
      *  take documents[0].issuerSigned and verify it. This is what the wallet returns. */
+    public static MdlData verifyDeviceResponse(byte[] deviceResponseCbor, Collection<X509Certificate> trust) {
+        return verifyDeviceResponse(deviceResponseCbor, anchorOf(trust));
+    }
+
+    /** As above but with an explicit trust predicate (e.g. a cross-validated root key). */
     @SuppressWarnings("unchecked")
-    public static MdlData verifyDeviceResponse(byte[] deviceResponseCbor, java.util.Collection<X509Certificate> trust) {
+    public static MdlData verifyDeviceResponse(byte[] deviceResponseCbor, Anchor trust) {
         List<Object> docs = (List<Object>) asMap(Cbor.decode(deviceResponseCbor)).get("documents");
         if (docs == null || docs.isEmpty()) throw new MdlException("DeviceResponse has no documents");
         return verifyIssuerSigned(asMap(asMap(docs.get(0)).get("issuerSigned")), trust);
+    }
+
+    static boolean verifies(X509Certificate c, PublicKey k) {
+        try { c.verify(k, BC); return true; } catch (Exception e) { return false; }
+    }
+
+    /** Bootstrap the (unpublished) IACA Root public key by cross-validation: recover the
+     *  key that signed the live DS, and accept it only if it ALSO verifies an
+     *  independently-published CA cert with the same issuer (e.g. the VC-Signer served by
+     *  dmv.ca.gov). A random wrong candidate verifying a second, independent signature is
+     *  cryptographically negligible, so the survivor is genuinely CA's root key.
+     *  NOTE: this is a demo bootstrap, not an AAMVA VICAL trust assertion. */
+    public static PublicKey crossValidatedRootKey(X509Certificate live, Collection<X509Certificate> independents) {
+        for (PublicKey cand : recoverEcPublicKeys(live)) {
+            if (!verifies(live, cand)) continue;
+            for (X509Certificate ind : independents) {
+                if (!ind.getIssuerX500Principal().equals(live.getIssuerX500Principal())) continue; // same named root
+                if (verifies(ind, cand)) return cand;
+            }
+        }
+        throw new MdlException("IACA root key cross-validation failed");
+    }
+
+    /** Recover the <=2 candidate P-256 public keys that could have produced an ECDSA
+     *  certificate signature (RFC 6979 / SEC1 public-key recovery over the TBSCertificate). */
+    public static List<PublicKey> recoverEcPublicKeys(X509Certificate cert) {
+        try {
+            org.bouncycastle.asn1.ASN1Sequence sig = org.bouncycastle.asn1.ASN1Sequence.getInstance(cert.getSignature());
+            BigInteger r = ((org.bouncycastle.asn1.ASN1Integer) sig.getObjectAt(0)).getValue();
+            BigInteger s = ((org.bouncycastle.asn1.ASN1Integer) sig.getObjectAt(1)).getValue();
+
+            String dig = cert.getSigAlgName().toUpperCase().contains("SHA384") ? "SHA-384"
+                       : cert.getSigAlgName().toUpperCase().contains("SHA512") ? "SHA-512" : "SHA-256";
+            byte[] h = MessageDigest.getInstance(dig).digest(cert.getTBSCertificate());
+
+            org.bouncycastle.asn1.x9.X9ECParameters x9 = org.bouncycastle.asn1.nist.NISTNamedCurves.getByName("P-256");
+            org.bouncycastle.math.ec.ECCurve curve = x9.getCurve();
+            BigInteger n = x9.getN();
+            BigInteger q = ((org.bouncycastle.math.ec.ECCurve.Fp) curve).getQ();
+            org.bouncycastle.math.ec.ECPoint G = x9.getG();
+            BigInteger e = truncate(h, n);
+
+            java.security.spec.ECParameterSpec spec = ((java.security.interfaces.ECPublicKey)
+                    cert.getPublicKey()).getParams(); // any P-256 spec; leaf is P-256 too
+            java.security.KeyFactory kf = java.security.KeyFactory.getInstance("EC");
+
+            List<PublicKey> out = new java.util.ArrayList<>();
+            BigInteger rInv = r.modInverse(n);
+            for (int j = 0; j <= 1; j++) {
+                BigInteger x = r.add(BigInteger.valueOf(j).multiply(n));
+                if (x.compareTo(q) >= 0) continue;
+                for (int yBit = 0; yBit <= 1; yBit++) {
+                    try {
+                        byte[] enc = new byte[33];
+                        enc[0] = (byte) (0x02 | yBit);
+                        byte[] xb = to32(x);
+                        System.arraycopy(xb, 0, enc, 1, 32);
+                        org.bouncycastle.math.ec.ECPoint R = curve.decodePoint(enc);
+                        if (!R.multiply(n).isInfinity()) continue;                 // order check
+                        // Q = rInv*(s*R - e*G)
+                        org.bouncycastle.math.ec.ECPoint Q = org.bouncycastle.math.ec.ECAlgorithms
+                                .sumOfTwoMultiplies(R, s.multiply(rInv).mod(n), G, n.subtract(e).multiply(rInv).mod(n))
+                                .normalize();
+                        if (Q.isInfinity()) continue;
+                        java.security.spec.ECPoint jp = new java.security.spec.ECPoint(
+                                Q.getAffineXCoord().toBigInteger(), Q.getAffineYCoord().toBigInteger());
+                        out.add(kf.generatePublic(new java.security.spec.ECPublicKeySpec(jp, spec)));
+                    } catch (Exception ignore) { }
+                }
+            }
+            return out;
+        } catch (Exception ex) { throw new MdlException("EC key recovery failed: " + ex); }
+    }
+
+    private static BigInteger truncate(byte[] h, BigInteger n) {
+        BigInteger e = new BigInteger(1, h);
+        int excess = h.length * 8 - n.bitLength();
+        return excess > 0 ? e.shiftRight(excess) : e;
+    }
+
+    private static byte[] to32(BigInteger x) {
+        byte[] b = x.toByteArray(), out = new byte[32];
+        if (b.length == 32) return b;
+        if (b.length > 32) System.arraycopy(b, b.length - 32, out, 0, 32);
+        else System.arraycopy(b, 0, out, 32 - b.length, b.length);
+        return out;
+    }
+
+    /** Extract every cert in the issuerAuth x5chain (COSE label 33) of a
+     *  DeviceResponse — DS first, then any intermediate/IACA the issuer chose to
+     *  ship. Cert DNs are organizational (issuer identity), never PII. Lets a caller
+     *  discover which IACA anchor a real credential needs. */
+    @SuppressWarnings("unchecked")
+    public static List<X509Certificate> x5chain(byte[] deviceResponseCbor) {
+        try {
+            List<Object> docs = (List<Object>) asMap(Cbor.decode(deviceResponseCbor)).get("documents");
+            Map<Object, Object> issuerSigned = asMap(asMap(docs.get(0)).get("issuerSigned"));
+            Map<Object, Object> unprotected = (Map<Object, Object>) ((List<Object>) issuerSigned.get("issuerAuth")).get(1);
+            Object x5 = unprotected.get(33L);
+            List<byte[]> ders = new java.util.ArrayList<>();
+            if (x5 instanceof List) for (Object o : (List<Object>) x5) ders.add((byte[]) o);
+            else ders.add((byte[]) x5);
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            List<X509Certificate> out = new java.util.ArrayList<>();
+            for (byte[] der : ders) out.add((X509Certificate) cf.generateCertificate(new java.io.ByteArrayInputStream(der)));
+            return out;
+        } catch (Exception e) { throw new MdlException("x5chain extract failed: " + e); }
     }
 
     /** Core: verify IssuerAuth + IACA chain + bind every disclosed element to its
      *  MSO value digest; returns all verified elements (no fixed required set, so a
      *  presentation disclosing only age_over_18 works). */
     @SuppressWarnings("unchecked")
-    static MdlData verifyIssuerSigned(Map<Object, Object> issuerSigned, java.util.Collection<X509Certificate> trust) {
+    static MdlData verifyIssuerSigned(Map<Object, Object> issuerSigned, Anchor trust) {
         try {
             List<Object> auth = (List<Object>) issuerSigned.get("issuerAuth");
             byte[] protectedHdr = (byte[]) auth.get(0);
@@ -83,13 +211,8 @@ public final class Mdl {
             v.update(sigStruct);
             if (!v.verify(rsToDer(sigRS))) throw new MdlException("IssuerAuth signature invalid");
 
-            // 2. DS chains to a trusted IACA root.
-            boolean chained = false;
-            for (X509Certificate iaca : trust) {
-                if (!ds.getIssuerX500Principal().equals(iaca.getSubjectX500Principal())) continue;
-                try { ds.verify(iaca.getPublicKey(), BC); chained = true; break; } catch (Exception ignored) { }
-            }
-            if (!chained) throw new MdlException("DS does not chain to a trusted IACA");
+            // 2. DS chains to a trusted IACA root (predicate: bundled certs or bootstrapped key).
+            if (!trust.trusts(ds)) throw new MdlException("DS does not chain to a trusted IACA");
 
             // 3. MSO: unwrap the tag-24 payload, read valueDigests.
             Cbor.Tag msoTag = (Cbor.Tag) Cbor.decode(payload);

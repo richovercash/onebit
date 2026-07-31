@@ -58,6 +58,12 @@ calls, learns one bit and an unlinkable per-site pseudonym, and stores nothing.
     OpenID4VP app-to-app presentation, CA's published IACA trust anchor, and the
     OID4VP-reader integration that remains to build.
 
+**Security / privacy**
+- **[person-binding.md](person-binding.md)** — the "kid borrows a parent's passport"
+  problem: document- vs person-binding, why the mDL already avoids it (issuer does the
+  face-match), why platform Face ID can't help, and the optional on-device face-match
+  design. Includes the shipped `person_bound` assurance-level plumbing.
+
 **Reference / build notes**
 - **[stage-native-packaging.md](stage-native-packaging.md)** — how the ZK prover
   is packaged into the Android app (the fiddly native-library plumbing).

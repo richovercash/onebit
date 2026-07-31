@@ -35,6 +35,9 @@ public final class DemoServer {
     static KeyPair verifierKey;
     static String verifierId;
     static JsonObject allowlist;
+    /** -Donebit.personbound=true makes this a strict site: it demands a person-bound
+     *  (face-matched) credential and DENYs today's bearer credentials. */
+    static final boolean PERSON_BOUND = Boolean.getBoolean("onebit.personbound");
 
     public static void main(String[] args) throws Exception {
         allowlist = AttestationVerifier.readAllowlist(Files.readString(Paths.get(args[0])));
@@ -99,17 +102,22 @@ public final class DemoServer {
             policy.addProperty("icao_root_min_version", 1);
             policy.add("attestation", att);
             policy.addProperty("mode_b_accepted", false);
+            policy.addProperty("person_bound", PERSON_BOUND);   // demo accepts bearer creds; strict site demands face-match
             JsonObject c = new JsonObject();
             c.addProperty("v", 1);
             c.addProperty("nonce", nonceB64);
             c.addProperty("origin", ORIGIN);
             c.addProperty("verifier_id", verifierId);
-            c.addProperty("epoch", LocalDate.now().toString());
+            // Hourly-rotating epoch (YYYY-MM-DD-HH): the disclosed token changes every
+            // hour, so nothing persistent leaves the device — while still letting us
+            // rate-limit within the hour.
+            String epoch = LocalDate.now() + "-" + String.format("%02d", java.time.LocalTime.now().getHour());
+            c.addProperty("epoch", epoch);
             c.add("policy", policy);
             // Sign the canonical tuple (shared with the wallet), not the JSON text,
             // and publish the SPKI so the wallet can anchor sig to verifier_id.
             String signed = onebit.core.Challenge.signedContent(nonceB64, ORIGIN, verifierId,
-                    LocalDate.now().toString(), "age_gte", 18, 1, "A", false);
+                    epoch, "age_gte", 18, 1, "A", false, PERSON_BOUND);
             Signature sig = Signature.getInstance("SHA256withECDSA");
             sig.initSign(verifierKey.getPrivate());
             sig.update(signed.getBytes(StandardCharsets.UTF_8));

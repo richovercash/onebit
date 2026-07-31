@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- localhost response_uri server for the 18013-7 direct_post.jwt flow -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- foreground service keeps the process unfrozen during the brief presentation -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <application>
         <!-- Digital Credentials API verifier: pulls a real mDL from a wallet.
              Exported for adb-driven testing; a shipped build would trigger it
@@ -8,5 +13,23 @@
             android:name="onebit.wallet.MdlEnrollActivity"
             android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- Custom-scheme OID4VP flow: launch (no data) sends the request; the
+             wallet redirects back to onebitmdl://cb with the vp_token. -->
+        <activity
+            android:name="onebit.wallet.MdlSchemeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="onebitmdl" android:host="cb" />
+            </intent-filter>
+        </activity>
+        <service
+            android:name="onebit.wallet.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>
