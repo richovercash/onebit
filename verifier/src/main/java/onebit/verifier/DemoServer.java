@@ -149,7 +149,7 @@ public final class DemoServer {
                 + "&#9888;&#65039; ZK proof STUBBED — demo config only.</p>"
                 : "<p style='background:#e6f4ea;padding:.6em;border-radius:6px'>"
                 + "&#9989; ZK predicate proof verified (UltraHonk, on-device). "
-                + "Binding: P-only until Circuit E recursion.</p>";
+                + "Binding: document (CSCA&rarr;DSC&rarr;SOD proven in ZK).</p>";
         if (v.ok) {
             return "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
                 + "<body style='font-family:sans-serif;max-width:40em;margin:2em auto;padding:0 1em'>"

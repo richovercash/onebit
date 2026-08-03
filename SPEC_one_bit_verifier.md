@@ -216,4 +216,4 @@ Stateless. No PII path exists.
 ## ADR index
 - ADR-001: No registry of commitments (registries are observers). 
 - ADR-002: Raw key attestation only; policy-server calls prohibited (V1/V4).
-- ADR-003: Proving architecture (pending T2).
+- ADR-003: Proving architecture — DECIDED (2026-07): two-circuit split, both non-recursive. `enroll` proves CSCA→DSC + master-list Merkle membership once at enrollment (~10 s on-device); `mono_faithful` proves DSC→SOD passive auth + predicate + nullifier per presentation (~2.5–4.5 s native), chained by a shared `dsc_commit` public output. Recursion (Circuit P v1, π_E verified in-circuit) was built, proven sound, and measured at 20.3 s/presentation on Pixel 9a — the in-circuit Honk verifier (775k gates) costs more than redoing the single RSA check (177k), so it is reserved for multi-credential aggregation and the V2 full-unlinkability upgrade (dsc_commit reveals DSC batch). Tier A sub-second path: `present_amortized` (attested enrollment, rebind + predicate only, ~0.8 s). Evidence: docs/measurement-recursion-on-device.md, docs/architecture-proving-revisit.md, docs/amortized-enrollment.md.
