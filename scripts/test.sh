@@ -6,8 +6,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 : "${JAVA_HOME:=/usr/local/android-studio/jbr}"
-GRADLE=$(ls -d "$HOME"/.gradle/wrapper/dists/gradle-8.13-bin/*/gradle-8.13/bin/gradle | head -1)
+GRADLE=./gradlew   # repo-pinned wrapper (8.13); needs only a JDK
 NARGO="${NARGO:-$HOME/.nargo/bin/nargo}"
+
+# bb.js verify sidecar deps (pinned by package-lock.json)
+[ -d verifier/js/node_modules ] || (cd verifier/js && npm ci --silent)
 
 echo "== JUnit: core (PassiveAuth + 516-challenge fuzz + nullifier) =="
 JAVA_HOME="$JAVA_HOME" "$GRADLE" :core:test --console=plain -q

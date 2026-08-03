@@ -1,5 +1,14 @@
 # One Bit Verifier
 
+> ## ⚠️ UNAUDITED — RESEARCH PREVIEW
+> The circuits and protocol have **not** had an external security audit
+> (self-review only; an audit is being arranged — see the
+> [roadmap](ROADMAP_one_bit_verifier.md), P1.2). Until it completes and its
+> findings are remediated, **do not rely on this software for age
+> verification or any other purpose**. No claim of fitness for any use is
+> made. Soundness bugs in ZK circuits fail *open* and *silently* — treat
+> every proof this system accepts accordingly.
+
 Prove you're old enough — reveal nothing else.
 
 One Bit Verifier derives a **single bit** ("are you over 18?") from a government ID
@@ -29,12 +38,25 @@ live in [`docs/`](docs/).
 ## Build & run
 
 Requirements: JDK 17+ (Android Studio JBR), Android **minSdk 26**, an **NFC** device.
+The repo pins gradle via the wrapper (`./gradlew`).
 
 ```bash
 # build the privacy (sovereign) wallet
-JAVA_HOME=<android-studio>/jbr gradle :app:assembleSovereignDebug
+JAVA_HOME=<android-studio>/jbr ./gradlew :app:assembleSovereignDebug
 adb install -r app/build/outputs/apk/sovereign/debug/app-sovereign-debug.apk
 ```
+
+**Tests + circuit smoke (what CI runs):**
+
+```bash
+scripts/test.sh   # JUnit suites (516-challenge refusal fuzz, attestation,
+                  # wire fixtures) + compile/witness-solve of all live circuits
+                  # + real-proof verification through the bb.js sidecar
+```
+
+Toolchain pins: nargo `1.0.0-beta.20` (`NARGO=` to override), barretenberg
+4.2.0 via `@aztec/bb.js` (locked in `verifier/js/package-lock.json`),
+Node 18+.
 
 **Proving needs the SRS.** Push `g1_big.dat` to the app's external files dir before
 enrolling/presenting, or you'll see "Missing SRS". See
@@ -43,9 +65,10 @@ enrolling/presenting, or you'll see "Missing SRS". See
 **Present demo (site → wallet → site):**
 
 ```bash
-gradle :verifier:demoServer                 # gate on :8317  (add -Donebit.personbound=true for a strict site)
+./gradlew :verifier:demoServer              # gate on :8317  (add -Donebit.personbound=true for a strict site)
 adb reverse tcp:8317 tcp:8317               # phone localhost -> host
 # open http://localhost:8317 on the phone, tap "Verify with OneBit"
+# (or scan the gate page's QR with the phone camera — same signed challenge)
 ```
 
 ## Sharing
