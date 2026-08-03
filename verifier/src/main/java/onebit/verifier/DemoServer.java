@@ -141,7 +141,31 @@ public final class DemoServer {
             + "<p><a style='display:inline-block;background:#1a73e8;color:#fff;padding:.8em 1.2em;"
             + "border-radius:8px;text-decoration:none' href='" + deepLink + "'>"
             + "Verify with OneBit wallet</a></p>"
+            // QR channel (P1.5): same signed challenge, carried as a QR. Any camera
+            // app on the phone opens the onebit:// URI into the wallet — the wallet
+            // needs no scanner. (Cross-device response return is P4.2.)
+            + "<p>" + qrSvg(deepLink) + "</p>"
+            + "<p style='color:#666;font-size:.85em'>Or scan with your phone's camera "
+            + "&mdash; the challenge is identical either way.</p>"
             + "<p style='color:#666;font-size:.85em'>Verifier stores nothing. No account. No ID upload.</p>";
+    }
+
+    /** The deep link as an inline SVG QR (one path, crisp at any size). */
+    static String qrSvg(String text) {
+        try {
+            com.google.zxing.common.BitMatrix m = new com.google.zxing.qrcode.QRCodeWriter()
+                    .encode(text, com.google.zxing.BarcodeFormat.QR_CODE, 1, 1,
+                            java.util.Map.of(com.google.zxing.EncodeHintType.MARGIN, 2));
+            StringBuilder d = new StringBuilder();
+            for (int y = 0; y < m.getHeight(); y++)
+                for (int x = 0; x < m.getWidth(); x++)
+                    if (m.get(x, y)) d.append('M').append(x).append(' ').append(y).append("h1v1h-1z");
+            return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 " + m.getWidth()
+                + " " + m.getHeight() + "' width='260' height='260' shape-rendering='crispEdges'>"
+                + "<rect width='100%' height='100%' fill='#fff'/><path fill='#000' d='" + d + "'/></svg>";
+        } catch (Exception e) {
+            return "";   // QR is an alternate carrier; the tap link above still works
+        }
     }
 
     static String verdictPage(VerifySdk.Verdict v, long e2eMs) {

@@ -28,8 +28,9 @@ import onebit.core.Nullifier;
 
 /**
  * P0 presentation with NATIVE proving (mono_slim, ~2.5s foreground). Flow:
- * refusal check -> build monolithic witness -> native UltraHonk proof (real
- * RSA passive-auth + predicate + nullifier in one circuit) -> biometric ->
+ * refusal check -> biometric (opens the Seal auth window AND authorizes the
+ * ephemeral device key) -> unseal witness -> native UltraHonk proof (real
+ * RSA passive-auth + predicate + nullifier in one circuit) ->
  * device_sig over H(nonce||origin||SHA256(proof)) -> response via browser.
  *
  * Public inputs (mono_slim): [ctx, current, age_min, N, dsc_root].
@@ -107,9 +108,53 @@ final class Present {
             return;
         }
         onProving.run();   // all checks passed — now it's safe to show the "sealing" progress stage
-        say.accept(c.display() + (amortized ? "\nProving (amortized, ~0.8s)…"
-                : "\nProving (native, ~2.5s foreground)…"));
+        // Biometric FIRST (P1.5): the sealed credential unwraps only within the
+        // Seal auth window, so the strong biometric must precede witness
+        // decryption. The same prompt authorizes the ephemeral device-sig key
+        // (CryptoObject) — one fingerprint covers unseal + prove + sign.
+        say.accept(c.display() + "\nConfirm with fingerprint to unseal & prove…");
+        try {
+            // Ephemeral per-presentation key: fresh, hardware-attested, deleted right
+            // after sending. No persistent per-site key ⇒ no on-device record of which
+            // sites you've answered (strengthens the "no logs anywhere" / double-anonymity story).
+            final String alias = "kv-eph-" + Long.toString(
+                    Math.abs(new java.security.SecureRandom().nextLong()), 36);
+            final KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
+            ks.load(null);
+            Attest.generate(alias, c.nonce, true);
+            Signature sig = Signature.getInstance("SHA256withECDSA");
+            sig.initSign(((KeyStore.PrivateKeyEntry) ks.getEntry(alias, null)).getPrivateKey());
+            BiometricPrompt prompt = new BiometricPrompt.Builder(a)
+                    .setTitle("OneBit: answer one bit")
+                    .setSubtitle(c.display())
+                    .setNegativeButton("Refuse", a.getMainExecutor(),
+                            (d, w) -> say.accept("Holder refused."))
+                    .build();
+            prompt.authenticate(new BiometricPrompt.CryptoObject(sig),
+                    new CancellationSignal(), a.getMainExecutor(),
+                    new BiometricPrompt.AuthenticationCallback() {
+                        @Override
+                        public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult r) {
+                            proveAndSend(c, cred, ks, alias, r.getCryptoObject().getSignature(), g1, t0);
+                        }
 
+                        @Override
+                        public void onAuthenticationError(int code, CharSequence msg) {
+                            try { ks.deleteEntry(alias); } catch (Exception ignore) {} // don't leak the ephemeral key
+                            say.accept("Auth error: " + msg);
+                        }
+                    });
+        } catch (Exception e) {
+            say.accept("FAIL (closed): " + e);
+        }
+    }
+
+    /** Runs after the biometric: unseal (inside the Seal auth window), prove,
+     *  sign with the already-authorized ephemeral key, send via browser. */
+    private void proveAndSend(Challenge c, SharedPreferences cred, KeyStore ks,
+                              String alias, Signature sig, java.io.File g1, long t0) {
+        say.accept(amortized ? "Proving (amortized, ~0.8s)…"
+                : "Proving (native, ~2.5s foreground)…");
         new Thread(() -> {
             android.os.PowerManager pm = a.getSystemService(android.os.PowerManager.class);
             android.os.PowerManager.WakeLock wl = pm.newWakeLock(
@@ -131,11 +176,25 @@ final class Present {
                 // proofBytes = [public_inputs (5*32B)][proof]; keep whole so the
                 // verifier can reconstruct {proof, publicInputs}. N is pub #3.
                 String nullifier = fieldHex(proofBytes, 3);
-                say.accept("Proof in " + proveMs + " ms. Confirm with fingerprint.");
-                a.runOnUiThread(() -> signAndSend(c, proofBytes, nullifier, proveMs, t0));
+
+                MessageDigest md = MessageDigest.getInstance("SHA-256");
+                md.update(c.nonce);
+                md.update(c.origin.getBytes(StandardCharsets.UTF_8));
+                md.update(MessageDigest.getInstance("SHA-256").digest(proofBytes));
+                sig.update(md.digest());
+                byte[] deviceSig = sig.sign();   // completes the biometric-authorized op
+                String response = envelope(c, alias, proofBytes, nullifier, deviceSig);
+                try { ks.deleteEntry(alias); } catch (Exception ignore) {} // ephemeral: keep no trace
+                String url = RETURN_URL + Base64.encodeToString(
+                        response.getBytes(StandardCharsets.UTF_8),
+                        Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+                a.runOnUiThread(() -> a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))));
+                say.accept("Presented in " + (System.currentTimeMillis() - t0)
+                        + " ms (proof " + proveMs + " ms).");
             } catch (Throwable t) {
                 android.util.Log.w("ONEBIT_PRESENT", "PROVE FAIL: " + t);
                 say.accept("PROVE FAIL (closed): " + t);
+                try { ks.deleteEntry(alias); } catch (Exception ignore) {} // don't leak the ephemeral key
             } finally {
                 if (wl.isHeld()) wl.release();
             }
@@ -173,60 +232,6 @@ final class Present {
                 + Nullifier.ctx(c.verifierId, c.epoch) + "\n"
                 + current + "\n"
                 + c.value + "\n";
-    }
-
-    private void signAndSend(Challenge c, byte[] proof, String nullifier, long proveMs, long t0) {
-        try {
-            // Ephemeral per-presentation key: fresh, hardware-attested, deleted right
-            // after sending. No persistent per-site key ⇒ no on-device record of which
-            // sites you've answered (strengthens the "no logs anywhere" / double-anonymity story).
-            final String alias = "kv-eph-" + Long.toString(Math.abs(new java.security.SecureRandom().nextLong()), 36);
-            final KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-            ks.load(null);
-            Attest.generate(alias, c.nonce, true);
-
-            Signature sig = Signature.getInstance("SHA256withECDSA");
-            sig.initSign(((KeyStore.PrivateKeyEntry) ks.getEntry(alias, null)).getPrivateKey());
-            BiometricPrompt prompt = new BiometricPrompt.Builder(a)
-                    .setTitle("OneBit: answer one bit")
-                    .setSubtitle(c.display())
-                    .setNegativeButton("Refuse", a.getMainExecutor(),
-                            (d, w) -> say.accept("Holder refused."))
-                    .build();
-            prompt.authenticate(new BiometricPrompt.CryptoObject(sig),
-                    new CancellationSignal(), a.getMainExecutor(),
-                    new BiometricPrompt.AuthenticationCallback() {
-                        @Override
-                        public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult r) {
-                            try {
-                                MessageDigest md = MessageDigest.getInstance("SHA-256");
-                                md.update(c.nonce);
-                                md.update(c.origin.getBytes(StandardCharsets.UTF_8));
-                                md.update(MessageDigest.getInstance("SHA-256").digest(proof));
-                                Signature s = r.getCryptoObject().getSignature();
-                                s.update(md.digest());
-                                String response = envelope(c, alias, proof, nullifier, s.sign());
-                                String url = RETURN_URL + Base64.encodeToString(
-                                        response.getBytes(StandardCharsets.UTF_8),
-                                        Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
-                                a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-                                try { ks.deleteEntry(alias); } catch (Exception ignore) {} // ephemeral: keep no trace
-                                say.accept("Presented in " + (System.currentTimeMillis() - t0)
-                                        + " ms (proof " + proveMs + " ms).");
-                            } catch (Exception e) {
-                                say.accept("FAIL (closed): " + e);
-                            }
-                        }
-
-                        @Override
-                        public void onAuthenticationError(int code, CharSequence msg) {
-                            try { ks.deleteEntry(alias); } catch (Exception ignore) {} // don't leak the ephemeral key
-                            say.accept("Auth error: " + msg);
-                        }
-                    });
-        } catch (Exception e) {
-            say.accept("FAIL (closed): " + e);
-        }
     }
 
     private String envelope(Challenge c, String alias, byte[] proof, String nullifier,
