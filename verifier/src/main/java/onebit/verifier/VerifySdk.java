@@ -29,6 +29,10 @@ public final class VerifySdk {
         public String nullifier = "";
         public boolean zkStub;
         public String chain = "";
+        /** Presentation circuit the holder used. Lets a relying party describe the
+         *  binding accurately: the mDL rail's issuer chain is verified at enrolment,
+         *  not re-proven in ZK per presentation the way mono_faithful is. */
+        public String circuit = "";
         public AttestationVerifier.Result attestation;
     }
 
@@ -63,6 +67,7 @@ public final class VerifySdk {
             //    provenance was established once at enrollment and is attested (T3),
             //    not re-proven per presentation. See docs/amortized-enrollment.md.
             String circuit = r.has("circuit") ? r.get("circuit").getAsString() : "mono_faithful";
+            v.circuit = circuit;
             // Amortized (Tier A) family: 4 public inputs [ctx, current, age_min, N].
             // present_amortized commits (dob, expiry); present_bool commits the mDL
             // age boolean + threshold (no dob, per the privacy rule).

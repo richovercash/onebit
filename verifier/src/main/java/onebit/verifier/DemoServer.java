@@ -168,12 +168,28 @@ public final class DemoServer {
         }
     }
 
+    /** Describe what the proof actually binds to. Only the faithful family re-proves the
+     *  issuer chain in ZK on every presentation; the amortized rails established document
+     *  provenance once, at enrolment, and attest it (see docs/amortized-enrollment.md).
+     *  Saying "CSCA->DSC->SOD proven in ZK" for an mDL presentation would overclaim twice:
+     *  wrong chain, and wrong place. */
+    static String bindingLine(VerifySdk.Verdict v) {
+        switch (v.circuit) {
+            case "present_bool":
+                return "Binding: mobile ID (IACA&rarr;DS&rarr;MSO verified at enrolment, attested).";
+            case "present_amortized":
+                return "Binding: document (CSCA&rarr;DSC&rarr;SOD verified at enrolment, attested).";
+            default:
+                return "Binding: document (CSCA&rarr;DSC&rarr;SOD proven in ZK).";
+        }
+    }
+
     static String verdictPage(VerifySdk.Verdict v, long e2eMs) {
         String stub = v.zkStub ? "<p style='background:#fff3cd;padding:.6em;border-radius:6px'>"
                 + "&#9888;&#65039; ZK proof STUBBED — demo config only.</p>"
                 : "<p style='background:#e6f4ea;padding:.6em;border-radius:6px'>"
                 + "&#9989; ZK predicate proof verified (UltraHonk, on-device). "
-                + "Binding: document (CSCA&rarr;DSC&rarr;SOD proven in ZK).</p>";
+                + bindingLine(v) + "</p>";
         if (v.ok) {
             return "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
                 + "<body style='font-family:sans-serif;max-width:40em;margin:2em auto;padding:0 1em'>"

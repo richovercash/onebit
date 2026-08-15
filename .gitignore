@@ -32,3 +32,8 @@ local.properties
 bench/noir-rs/
 bench/android-ndk-r27c/
 app/src/main/jniLibs/
+release.keystore
+keystore.properties
+
+# demo videos
+*.mp4

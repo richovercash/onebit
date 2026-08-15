@@ -265,6 +265,22 @@ public class MainActivity extends Activity {
         box.addView(b);
     }
 
+    /** Which rail the enrolled credential came from, for the header label. mDL enrolment
+     *  writes credtype="bool" (it commits over/threshold, not a dob — see Present.java);
+     *  no file yet means nothing is enrolled, and passport is this build's default read. */
+    private String sourceLabel() {
+        try {
+            if (new String(java.nio.file.Files.readAllBytes(
+                    new java.io.File(getFilesDir(), "credtype.txt").toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8).trim().equals("bool"))
+                return "READING MOBILE ID";
+        } catch (Exception e) { /* not enrolled yet */ }
+        return "READING PASSPORT";
+    }
+    // ponytail: read once, at view-build time in onCreate — so enrolling mid-session
+    // leaves a stale header until restart. Move the call into the stage transition if
+    // that ever shows up in a demo.
+
     // ---- STAGE: verify & seal (twinkle loader + live status) ----
     private android.view.View buildVerifyView() {
         android.widget.FrameLayout f = new android.widget.FrameLayout(this);
@@ -279,7 +295,7 @@ public class MainActivity extends Activity {
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.VERTICAL);
         top.setPadding(dp(24), dp(50), dp(24), dp(24));
-        top.addView(tv("●  READING PASSPORT", ORANGE, 11, "sans-serif-medium", 0.14f));
+        top.addView(tv("●  " + sourceLabel(), ORANGE, 11, "sans-serif-medium", 0.14f));
         TextView vh = tv("Verifying & sealing", WHITE, 26, "sans-serif-black", -0.03f);
         vh.setPadding(0, dp(8), 0, 0);
         top.addView(vh);
