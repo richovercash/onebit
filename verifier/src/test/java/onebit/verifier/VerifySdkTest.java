@@ -52,6 +52,7 @@ public class VerifySdkTest {
         md.update(NONCE);
         md.update(sigOrigin.getBytes(StandardCharsets.UTF_8));
         md.update(MessageDigest.getInstance("SHA-256").digest(STUB));
+        md.update((byte) 0); // person_bound=false (bearer), now bound into the signed digest
         Signature s = Signature.getInstance("SHA256withECDSA");
         s.initSign(AttestationVerifierTest.leafKeys.getPrivate());
         s.update(md.digest());

@@ -177,13 +177,17 @@ final class Present {
                 // verifier can reconstruct {proof, publicInputs}. N is pub #3.
                 String nullifier = fieldHex(proofBytes, 3);
 
+                // person_bound is signed into the digest (below) so the verifier can
+                // trust it; compute it once and reuse in the envelope.
+                boolean personBound = new java.io.File(a.getFilesDir(), "personbound.txt").exists();
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
                 md.update(c.nonce);
                 md.update(c.origin.getBytes(StandardCharsets.UTF_8));
                 md.update(MessageDigest.getInstance("SHA-256").digest(proofBytes));
+                md.update((byte) (personBound ? 1 : 0));
                 sig.update(md.digest());
                 byte[] deviceSig = sig.sign();   // completes the biometric-authorized op
-                String response = envelope(c, alias, proofBytes, nullifier, deviceSig);
+                String response = envelope(c, alias, proofBytes, nullifier, deviceSig, personBound);
                 try { ks.deleteEntry(alias); } catch (Exception ignore) {} // ephemeral: keep no trace
                 String url = RETURN_URL + Base64.encodeToString(
                         response.getBytes(StandardCharsets.UTF_8),
@@ -235,7 +239,7 @@ final class Present {
     }
 
     private String envelope(Challenge c, String alias, byte[] proof, String nullifier,
-                            byte[] deviceSig) throws Exception {
+                            byte[] deviceSig, boolean personBound) throws Exception {
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
         ks.load(null);
         JSONArray chain = new JSONArray();
@@ -270,8 +274,9 @@ final class Present {
                 .put("enroll_alg", amortized ? "" : enrollAlg())
                 .put("binding", amortized ? "attested-enrollment" : "document")
                 // person-bound only if a face-match enrollment marker was written (future,
-                // regulated tier); today's credentials are bearer, so this is false.
-                .put("person_bound", new java.io.File(a.getFilesDir(), "personbound.txt").exists())
+                // regulated tier); today's credentials are bearer, so this is false. Signed
+                // into device_sig (see proveAndSend) so a relay can't forge it.
+                .put("person_bound", personBound)
                 .toString();
     }
 

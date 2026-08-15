@@ -123,7 +123,12 @@ public final class VerifySdk {
                     // it commits the SAME DSC as this presentation (pub[4]). ADR-005.
                     String enrollB64 = r.has("enroll_proof") ? r.get("enroll_proof").getAsString() : "";
                     if (enrollB64.isEmpty()) {
-                        v.chain = "DSC->SOD only (no enroll proof; CSCA->DSC attestation-backed)";
+                        // FAIL CLOSED: the faithful rail's presentation proof only proves
+                        // DSC->SOD. The CSCA->DSC anchor to a real government master list is
+                        // carried solely by enroll_proof; without it the DSC is unanchored
+                        // (attacker can self-sign a SOD). Refuse rather than accept.
+                        throw new IllegalStateException(
+                                "faithful rail requires enroll_proof (CSCA->DSC anchor); refusing unanchored credential");
                     } else {
                         // Route the enroll verify by the CSCA algorithm the wallet
                         // used: circuit + published root must match.
@@ -148,13 +153,18 @@ public final class VerifySdk {
                             throw new IllegalStateException("enrollment proof invalid");
                         }
                         // The CSCA is in the PUBLISHED master-list tree (real root)
-                        // for its algorithm.
-                        if (allowlist.has(eRootKey)) {
-                            java.math.BigInteger published = new java.math.BigInteger(
-                                    allowlist.get(eRootKey).getAsString().substring(2), 16);
-                            if (!eRoot.equals(published)) {
-                                throw new IllegalStateException("CSCA not in published " + eAlg + " tree");
-                            }
+                        // for its algorithm. FAIL CLOSED if the allowlist has no root for
+                        // this alg: a missing trust anchor is a hard reject, not a skip —
+                        // otherwise an attacker picks an unanchored alg and supplies a
+                        // fabricated root (eRoot is prover-controlled).
+                        if (!allowlist.has(eRootKey)) {
+                            throw new IllegalStateException(
+                                    "no published CSCA root for " + eAlg + " in allowlist; refusing (fail-closed)");
+                        }
+                        java.math.BigInteger published = new java.math.BigInteger(
+                                allowlist.get(eRootKey).getAsString().substring(2), 16);
+                        if (!eRoot.equals(published)) {
+                            throw new IllegalStateException("CSCA not in published " + eAlg + " tree");
                         }
                         v.chain = "CSCA(" + eAlg + ", in master list)->DSC->SOD, fully verified in ZK";
                     }
@@ -177,6 +187,9 @@ public final class VerifySdk {
             md.update(nonce);
             md.update(c.origin.getBytes(StandardCharsets.UTF_8));
             md.update(MessageDigest.getInstance("SHA-256").digest(proof));
+            // Bind the assurance flag into the device-signed digest so a relay/MITM
+            // cannot flip an unsigned "person_bound":true past the policy gate above.
+            md.update((byte) (personBoundCred ? 1 : 0));
             Signature s = Signature.getInstance("SHA256withECDSA");
             s.initVerify(chain.get(0).getPublicKey());
             s.update(md.digest());

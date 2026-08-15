@@ -222,6 +222,19 @@ public final class Mdl {
             Map<Object, Object> nsDigests = (Map<Object, Object>)
                     ((Map<Object, Object>) mso.get("valueDigests")).get(NS);
 
+            // 3b. Temporal validity (ISO 18013-5 §9.3.1). Fail closed: the DS cert must be
+            // currently valid, and now must fall within the MSO validity window. MSOs are
+            // short-lived, so an expired one means the issuer no longer vouches for the data.
+            ds.checkValidity();
+            Map<Object, Object> validity = (Map<Object, Object>) mso.get("validityInfo");
+            if (validity == null) throw new MdlException("MSO has no validityInfo");
+            java.time.Instant now = java.time.Instant.now();
+            Object vf = validity.get("validFrom");
+            if (vf != null && now.isBefore(tdate(vf))) throw new MdlException("MSO not yet valid");
+            Object vu = validity.get("validUntil");
+            if (vu == null) throw new MdlException("MSO has no validUntil");
+            if (now.isAfter(tdate(vu))) throw new MdlException("MSO expired (validUntil " + tdate(vu) + ")");
+
             // 4. Bind each disclosed element: SHA256(#6.24(IssuerSignedItem)) == digest.
             Map<Object, Object> nameSpaces = (Map<Object, Object>) issuerSigned.get("nameSpaces");
             MessageDigest sha = MessageDigest.getInstance("SHA-256");
@@ -250,6 +263,15 @@ public final class Mdl {
         } catch (Exception e) {
             throw new MdlException("mdoc parse/verify failed: " + e);
         }
+    }
+
+    /** COSE tdate (tag 0, RFC3339 date-time) or full-date (tag 1004 "YYYY-MM-DD")
+     *  -> Instant. A bare date is taken at start-of-day UTC. */
+    static java.time.Instant tdate(Object v) {
+        String s = v instanceof Cbor.Tag ? (String) ((Cbor.Tag) v).v : (String) v;
+        if (s.length() == 10) return java.time.LocalDate.parse(s)
+                .atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+        return java.time.Instant.parse(s);
     }
 
     /** full-date "YYYY-MM-DD" (tag 1004 or plain tstr) -> YYYYMMDD int. */

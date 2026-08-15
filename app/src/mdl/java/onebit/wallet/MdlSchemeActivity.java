@@ -266,6 +266,10 @@ public class MdlSchemeActivity extends Activity {
             if (c > 0 && line.substring(0, c).trim().equalsIgnoreCase("Content-Length"))
                 len = Integer.parseInt(line.substring(c + 1).trim());
         }
+        // Bound the attacker-controlled length before allocating. mDL response JWEs are
+        // tens of KB; cap at 512KB so a malicious local app can't force a huge allocation.
+        if (len < 0 || len > 512 * 1024)
+            throw new IllegalStateException("Content-Length out of range: " + len);
         byte[] body = new byte[len];
         int off = 0;
         while (off < len) { int r = in.read(body, off, len - off); if (r < 0) break; off += r; }

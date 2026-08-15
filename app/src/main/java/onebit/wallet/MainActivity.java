@@ -572,15 +572,23 @@ public class MainActivity extends Activity {
     private void handleDeepLink(android.content.Intent intent) {
         android.net.Uri u = intent == null ? null : intent.getData();
         if (u == null || !"onebit".equals(u.getScheme())) return;
+        // Dev/demo entry points (benchp: heavy native proving; enrollmdl: inject the
+        // bundled test credential, overwriting acred.bin) must never be web-triggerable.
+        // A browser navigating to onebit:// adds CATEGORY_BROWSABLE; adb `am start` does
+        // not — so gate these on the absence of that category. Keeps the demo path
+        // working while blocking a malicious page from firing them silently.
+        boolean fromWeb = intent.hasCategory(android.content.Intent.CATEGORY_BROWSABLE);
         // P1.0 spike: adb-triggerable native recursion bench (no UI tap needed).
         //   adb shell am start -a android.intent.action.VIEW -d onebit://benchp
         // Read the result: adb logcat -s ONEBIT_NATIVE  ->  PROVE OK [recursion-775k]
         if ("benchp".equals(u.getHost())) {
+            if (fromWeb) { say("Dev deep link refused (browser)."); return; }
             nativeProveTest("zk/circuit_p.json", "zk/wit_p.txt", "recursion-775k");
             return;
         }
         // Demo: enroll the bundled test mDL (Tier A). adb shell am start -d onebit://enrollmdl
         if ("enrollmdl".equals(u.getHost())) {
+            if (fromWeb) { say("Demo deep link refused (browser)."); return; }
             new Thread(this::enrollMdl).start();
             return;
         }
