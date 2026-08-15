@@ -1,0 +1,11 @@
+event_id: PROV-20260815T031642-926
+timestamp: 2026-08-15T03:16:42.926Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:issue:2026-08-15T03-16-42Z-nullifier-key-k-unconstrained-in-mono-faithful-mon.md
+reason_code: initial_creation
+summary: "Created issue: Nullifier key k unconstrained in mono_faithful / mono_slim (soundness)"
+fingerprint_before: null
+fingerprint_after: sha256:d0d8f8fc12399352

@@ -1,0 +1,11 @@
+event_id: PROV-20260815T031632-899
+timestamp: 2026-08-15T03:16:32.899Z
+actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_type: human
+action: create
+artifact_refs:
+  - sentinel:issue:2026-08-15T03-16-32Z-mdl-deviceresponse-skips-deviceauth-sessiontranscr.md
+reason_code: initial_creation
+summary: "Created issue: mDL DeviceResponse skips deviceAuth / SessionTranscript holder-binding"
+fingerprint_before: null
+fingerprint_after: sha256:5a003480c2f08dde

@@ -48,6 +48,8 @@ public final class Cbor {
     }
 
     public static byte[] uint(long v) { return head(0, v); }
+    public static byte[] nint(long v) { return head(1, -1 - v); }    // negative int (v < 0)
+    public static byte[] nul() { return new byte[]{(byte) 0xf6}; }   // simple value 22 = null
     public static byte[] bstr(byte[] b) { return cat(head(2, b.length), b); }
     public static byte[] tstr(String s) { byte[] b = s.getBytes(StandardCharsets.UTF_8); return cat(head(3, b.length), b); }
     public static byte[] bool(boolean x) { return new byte[]{(byte) (x ? 0xf5 : 0xf4)}; }

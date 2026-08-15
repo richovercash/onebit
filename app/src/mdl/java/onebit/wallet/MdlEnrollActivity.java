@@ -76,9 +76,12 @@ public class MdlEnrollActivity extends Activity {
             if (!(c instanceof DigitalCredential)) { toast("unexpected credential: " + c.getType()); finish(); return; }
             byte[] dr = extractDeviceResponse(((DigitalCredential) c).getCredentialJson());
             if (dr == null) { toast("response present but no parseable mdoc (maybe encrypted) — see log"); finish(); return; }
-            onebit.core.Mdl.MdlData d = onebit.core.Mdl.verifyDeviceResponse(dr, trust());
+            // Display/probe only: this DC-API path never enrolls (see handle() — it just
+            // toasts). Issuer provenance is enough to show the bit; it deliberately does NOT
+            // assert holder-binding. Any enrolling path must use the deviceAuth overload.
+            onebit.core.Mdl.MdlData d = onebit.core.Mdl.verifyIssuerAuth(dr, trust());
             boolean over18 = d.ageOver(18);
-            Log.i(TAG, "mDL VERIFIED — issuer-signed age_over_18=" + over18
+            Log.i(TAG, "mDL VERIFIED (issuer only, no holder-binding) — age_over_18=" + over18
                     + " (DS issuer=" + d.ds.getIssuerX500Principal() + ")");
             toast("CA mDL verified ✓  over-18 = " + over18);
             finish();

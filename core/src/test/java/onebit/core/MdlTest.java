@@ -10,6 +10,7 @@ import java.security.PublicKey;
 import java.security.Security;
 import java.security.Signature;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Date;
 import java.util.List;
@@ -124,6 +125,117 @@ public class MdlTest {
 
     @Test public void tamperedDigestFails() throws Exception {
         try { Mdl.verify(mdoc(true), List.of(iaca)); fail("accepted tampered digest"); }
+        catch (Mdl.MdlException expected) { }
+    }
+
+    // ---- holder-binding (deviceAuth) ----
+
+    /** Full DeviceResponse: issuerSigned (with the deviceKey bound in the MSO) +
+     *  deviceSigned carrying a DeviceSignature over `st`. `bindKey` chooses which key
+     *  signs deviceAuth (wrong key => a bound-holder mismatch). `st` is the transcript
+     *  the DEVICE signed over; the verifier is handed `stVerify` separately. */
+    static byte[] deviceResponse(KeyPair devKeys, byte[] st, boolean includeDeviceSigned) throws Exception {
+        MessageDigest sha = MessageDigest.getInstance("SHA-256");
+        byte[] dobItem = item(1, "birth_date", Cbor.tag(1004, Cbor.tstr("1980-01-01")));
+        byte[] expItem = item(2, "expiry_date", Cbor.tag(1004, Cbor.tstr("2030-01-01")));
+        byte[] dobTagged = Cbor.tag(24, Cbor.bstr(dobItem));
+        byte[] expTagged = Cbor.tag(24, Cbor.bstr(expItem));
+        byte[] valueDigests = Cbor.map(Cbor.tstr(Mdl.NS),
+                Cbor.map(Cbor.uint(1), Cbor.bstr(sha.digest(dobTagged)),
+                         Cbor.uint(2), Cbor.bstr(sha.digest(expTagged))));
+
+        // COSE_Key EC2/P-256 for the device public key: {1:2, -1:1, -2:x, -3:y}.
+        ECPublicKey dpk = (ECPublicKey) devKeys.getPublic();
+        byte[] deviceKey = Cbor.map(
+                Cbor.uint(1), Cbor.uint(2),
+                Cbor.nint(-1), Cbor.uint(1),
+                Cbor.nint(-2), Cbor.bstr(Witness.toBE(dpk.getW().getAffineX(), 32)),
+                Cbor.nint(-3), Cbor.bstr(Witness.toBE(dpk.getW().getAffineY(), 32)));
+
+        byte[] mso = Cbor.map(
+                Cbor.tstr("version"), Cbor.tstr("1.0"),
+                Cbor.tstr("digestAlgorithm"), Cbor.tstr("SHA-256"),
+                Cbor.tstr("valueDigests"), valueDigests,
+                Cbor.tstr("deviceKeyInfo"), Cbor.map(Cbor.tstr("deviceKey"), deviceKey),
+                Cbor.tstr("docType"), Cbor.tstr("org.iso.18013.5.1.mDL"),
+                Cbor.tstr("validityInfo"), Cbor.map(
+                        Cbor.tstr("signed"), Cbor.tag(0, Cbor.tstr("2026-01-01T00:00:00Z")),
+                        Cbor.tstr("validUntil"), Cbor.tag(0, Cbor.tstr("2030-01-01T00:00:00Z"))));
+
+        byte[] protectedHdr = Cbor.map(Cbor.uint(1), Cbor.nint(-7));   // ES256
+        byte[] payloadInner = Cbor.tag(24, Cbor.bstr(mso));
+        byte[] issuerSig = signRs(dsKeys.getPrivate(), Cbor.array(Cbor.tstr("Signature1"),
+                Cbor.bstr(protectedHdr), Cbor.bstr(new byte[0]), Cbor.bstr(payloadInner)));
+        byte[] cose = Cbor.array(Cbor.bstr(protectedHdr),
+                Cbor.map(Cbor.uint(33), Cbor.bstr(ds.getEncoded())),
+                Cbor.bstr(payloadInner), Cbor.bstr(issuerSig));
+        byte[] issuerSigned = Cbor.map(
+                Cbor.tstr("nameSpaces"), Cbor.map(Cbor.tstr(Mdl.NS), Cbor.array(dobTagged, expTagged)),
+                Cbor.tstr("issuerAuth"), cose);
+
+        byte[][] docKV;
+        if (includeDeviceSigned) {
+            byte[] dnsBytes = Cbor.tag(24, Cbor.bstr(Cbor.map()));   // empty DeviceNameSpaces
+            byte[] deviceAuthentication = Cbor.array(Cbor.tstr("DeviceAuthentication"), st,
+                    Cbor.tstr("org.iso.18013.5.1.mDL"), dnsBytes);
+            byte[] deviceAuthBytes = Cbor.tag(24, Cbor.bstr(deviceAuthentication));
+            byte[] devSig = signRs(devKeys.getPrivate(), Cbor.array(Cbor.tstr("Signature1"),
+                    Cbor.bstr(protectedHdr), Cbor.bstr(new byte[0]), Cbor.bstr(deviceAuthBytes)));
+            byte[] deviceSignature = Cbor.array(Cbor.bstr(protectedHdr), Cbor.map(), Cbor.nul(), Cbor.bstr(devSig));
+            byte[] deviceSigned = Cbor.map(
+                    Cbor.tstr("nameSpaces"), dnsBytes,
+                    Cbor.tstr("deviceAuth"), Cbor.map(Cbor.tstr("deviceSignature"), deviceSignature));
+            docKV = new byte[][]{Cbor.tstr("docType"), Cbor.tstr("org.iso.18013.5.1.mDL"),
+                    Cbor.tstr("issuerSigned"), issuerSigned, Cbor.tstr("deviceSigned"), deviceSigned};
+        } else {
+            docKV = new byte[][]{Cbor.tstr("docType"), Cbor.tstr("org.iso.18013.5.1.mDL"),
+                    Cbor.tstr("issuerSigned"), issuerSigned};
+        }
+        return Cbor.map(Cbor.tstr("documents"), Cbor.array(Cbor.map(docKV)));
+    }
+
+    static byte[] signRs(PrivateKey key, byte[] msg) throws Exception {
+        Signature s = Signature.getInstance("SHA256withECDSA", "BC");
+        s.initSign(key);
+        s.update(msg);
+        return derToRs(s.sign(), 32);
+    }
+
+    static KeyPair p256() throws Exception {
+        KeyPairGenerator g = KeyPairGenerator.getInstance("EC", "BC");
+        g.initialize(new ECGenParameterSpec("secp256r1"));
+        return g.generateKeyPair();
+    }
+
+    static final byte[] ST = Cbor.array(Cbor.nul(), Cbor.nul(),
+            Cbor.array(Cbor.bstr(new byte[]{1, 2, 3}), Cbor.bstr(new byte[]{4, 5, 6}), Cbor.tstr("nonce-xyz")));
+
+    @Test public void deviceAuthBindsHolder() throws Exception {
+        KeyPair dev = p256();
+        Mdl.MdlData d = Mdl.verifyDeviceResponse(deviceResponse(dev, ST, true), Mdl.anchorOf(List.of(iaca)), ST);
+        assertEquals(19800101, d.dob);   // issuer data still extracted
+    }
+
+    @Test public void replayedTranscriptFails() throws Exception {
+        // device signed ST, but the verifier is handed a DIFFERENT session transcript
+        byte[] other = Cbor.array(Cbor.nul(), Cbor.nul(), Cbor.array(Cbor.tstr("attacker-session")));
+        try { Mdl.verifyDeviceResponse(deviceResponse(p256(), ST, true), Mdl.anchorOf(List.of(iaca)), other);
+            fail("accepted response bound to a different session"); }
+        catch (Mdl.MdlException expected) { }
+    }
+
+    @Test public void missingDeviceAuthFails() throws Exception {
+        // issuerSigned replay: authentic issuer data, no holder binding => must reject
+        try { Mdl.verifyDeviceResponse(deviceResponse(p256(), ST, false), Mdl.anchorOf(List.of(iaca)), ST);
+            fail("accepted DeviceResponse with no deviceAuth"); }
+        catch (Mdl.MdlException expected) { }
+    }
+
+    @Test public void tamperedDeviceSignatureFails() throws Exception {
+        byte[] dr = deviceResponse(p256(), ST, true);
+        dr[dr.length - 1] ^= 1;   // corrupt the trailing DeviceSignature bytes
+        try { Mdl.verifyDeviceResponse(dr, Mdl.anchorOf(List.of(iaca)), ST);
+            fail("accepted tampered device signature"); }
         catch (Mdl.MdlException expected) { }
     }
 

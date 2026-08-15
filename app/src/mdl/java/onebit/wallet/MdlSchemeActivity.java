@@ -58,6 +58,8 @@ public class MdlSchemeActivity extends Activity {
 
     private ServerSocket server;
     private ECPrivateKey encPriv;   // ephemeral reader key the wallet encrypts to
+    private String reqNonce;        // OID4VP authz-request nonce (SessionTranscript input)
+    private String respUri;         // response_uri we host (SessionTranscript input)
 
     @Override
     protected void onCreate(Bundle b) {
@@ -83,9 +85,9 @@ public class MdlSchemeActivity extends Activity {
         int port = server.getLocalPort();
         new Thread(this::serve, "onebit-mdl-cb").start();
 
-        String nonce = rand16();
-        String respUri = "http://127.0.0.1:" + port + "/cb";
-        String jar = buildJar(nonce, (ECPublicKey) enc.getPublic(), respUri);
+        reqNonce = rand16();
+        respUri = "http://127.0.0.1:" + port + "/cb";
+        String jar = buildJar(reqNonce, (ECPublicKey) enc.getPublic(), respUri);
         Uri u = new Uri.Builder().scheme("mdoc-openid4vp").authority("")
                 .appendQueryParameter("client_id", CLIENT_ID)
                 .appendQueryParameter("request", jar).build();
@@ -197,9 +199,32 @@ public class MdlSchemeActivity extends Activity {
             try { c.verify(root); return c.getIssuerX500Principal().equals(ds.getIssuerX500Principal()); }
             catch (Exception e) { return false; }
         };
-        onebit.core.Mdl.MdlData d = onebit.core.Mdl.verifyDeviceResponse(dr, anchor);
-        Log.i(TAG, "IACA root bootstrapped via cross-validation (pending VICAL)");
+        // Holder-binding: verify the mdoc DeviceSignature over the ISO 18013-7 OID4VP
+        // SessionTranscript for THIS exchange (binds the response to our nonce +
+        // response_uri, defeating replay of a captured issuerSigned blob). mdocGeneratedNonce
+        // travels in the JWE apu header. Fails closed if deviceAuth is missing/invalid.
+        byte[] sessionTranscript = oid4vpSessionTranscript(apu);
+        onebit.core.Mdl.MdlData d = onebit.core.Mdl.verifyDeviceResponse(dr, anchor, sessionTranscript);
+        Log.i(TAG, "IACA root bootstrapped via cross-validation (pending VICAL); deviceAuth holder-binding OK");
         return d;
+    }
+
+    /** ISO 18013-7 Annex B OID4VPHandover SessionTranscript:
+     *  [ null, null, [ SHA256(cbor[client_id, mdocNonce]), SHA256(cbor[response_uri, mdocNonce]), nonce ] ].
+     *  mdocGeneratedNonce is the JWE apu (base64url text the wallet supplied). This is the
+     *  one wallet-profile-sensitive spot — if a wallet uses a different handover encoding,
+     *  deviceAuth fails closed and this builder is what to adjust. */
+    byte[] oid4vpSessionTranscript(byte[] apu) throws Exception {
+        String mdocNonce = new String(apu, "US-ASCII");
+        java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+        byte[] clientIdHash = sha.digest(onebit.core.Cbor.array(
+                onebit.core.Cbor.tstr(CLIENT_ID), onebit.core.Cbor.tstr(mdocNonce)));
+        byte[] respUriHash = sha.digest(onebit.core.Cbor.array(
+                onebit.core.Cbor.tstr(respUri), onebit.core.Cbor.tstr(mdocNonce)));
+        byte[] handover = onebit.core.Cbor.array(
+                onebit.core.Cbor.bstr(clientIdHash), onebit.core.Cbor.bstr(respUriHash),
+                onebit.core.Cbor.tstr(reqNonce));
+        return onebit.core.Cbor.array(onebit.core.Cbor.nul(), onebit.core.Cbor.nul(), handover);
     }
 
     /** Amortized Tier-A enrollment from the verified mDL: commit the disclosed age

@@ -35,6 +35,9 @@ public final class Mdl {
         public int expiry;       // YYYYMMDD (0 if expiry_date not disclosed)
         public byte[] msoBytes;  // the MSO (COSE payload inner bstr) — doc-identity source
         public X509Certificate ds;
+        /** Issuer-bound device public key from MSO deviceKeyInfo (null if absent).
+         *  The anchor for holder-binding: deviceAuth must be signed by this key. */
+        public PublicKey deviceKey;
         /** true iff the issuer-signed age_over_<n> boolean was disclosed and true. */
         public boolean ageOver(int n) { return Boolean.TRUE.equals(elements.get("age_over_" + n)); }
     }
@@ -65,18 +68,106 @@ public final class Mdl {
         return verifyIssuerSigned(asMap(Cbor.decode(issuerSignedCbor)), anchorOf(trust));
     }
 
-    /** Verify an ISO 18013-5 DeviceResponse (the OID4VP / DC-API vp_token payload):
-     *  take documents[0].issuerSigned and verify it. This is what the wallet returns. */
-    public static MdlData verifyDeviceResponse(byte[] deviceResponseCbor, Collection<X509Certificate> trust) {
-        return verifyDeviceResponse(deviceResponseCbor, anchorOf(trust));
+    /** Full DeviceResponse verification WITH holder-binding: issuer passive auth AND
+     *  the mdoc deviceAuth (DeviceSignature over the SessionTranscript). Use this on any
+     *  path that enrolls/acts on the credential — it defeats replay of a captured
+     *  issuerSigned blob. `sessionTranscript` is the CBOR-encoded ISO 18013-5
+     *  SessionTranscript for this exchange, built by the caller from its OID4VP session
+     *  context (only the caller knows client_id / response_uri / nonce). Fails closed if
+     *  deviceSigned/deviceAuth is missing or the signature does not verify. */
+    @SuppressWarnings("unchecked")
+    public static MdlData verifyDeviceResponse(byte[] deviceResponseCbor, Anchor trust, byte[] sessionTranscript) {
+        Map<Object, Object> doc0 = firstDocument(deviceResponseCbor);
+        MdlData d = verifyIssuerSigned(asMap(doc0.get("issuerSigned")), trust);
+        String docType = (String) doc0.get("docType");
+        verifyDeviceAuth(doc0, d, docType, sessionTranscript);
+        return d;
     }
 
-    /** As above but with an explicit trust predicate (e.g. a cross-validated root key). */
+    /** Issuer/provenance verification ONLY — NO holder-binding. The returned data is
+     *  authentic to the issuer but NOT bound to the presenter, so a captured
+     *  issuerSigned blob replays. Safe only for display/probe paths that never enroll
+     *  or grant on the result. Anything that acts on the credential must use the
+     *  {@link #verifyDeviceResponse(byte[], Anchor, byte[])} holder-binding overload. */
+    public static MdlData verifyIssuerAuth(byte[] deviceResponseCbor, Collection<X509Certificate> trust) {
+        return verifyIssuerSigned(asMap(firstDocument(deviceResponseCbor).get("issuerSigned")), anchorOf(trust));
+    }
+
     @SuppressWarnings("unchecked")
-    public static MdlData verifyDeviceResponse(byte[] deviceResponseCbor, Anchor trust) {
+    static Map<Object, Object> firstDocument(byte[] deviceResponseCbor) {
         List<Object> docs = (List<Object>) asMap(Cbor.decode(deviceResponseCbor)).get("documents");
         if (docs == null || docs.isEmpty()) throw new MdlException("DeviceResponse has no documents");
-        return verifyIssuerSigned(asMap(asMap(docs.get(0)).get("issuerSigned")), trust);
+        return asMap(docs.get(0));
+    }
+
+    /** Verify the mdoc DeviceSignature (holder-binding) over DeviceAuthenticationBytes =
+     *  #6.24(["DeviceAuthentication", SessionTranscript, docType, DeviceNameSpacesBytes]),
+     *  under the issuer-bound deviceKey from the MSO. ES256 / DeviceSignature only. */
+    @SuppressWarnings("unchecked")
+    static void verifyDeviceAuth(Map<Object, Object> doc0, MdlData d, String docType, byte[] sessionTranscript) {
+        try {
+            if (d.deviceKey == null) throw new MdlException("MSO has no deviceKey — cannot bind holder");
+            if (docType == null) throw new MdlException("document has no docType");
+            Map<Object, Object> deviceSigned = asMap(doc0.get("deviceSigned"));
+            if (deviceSigned == null) throw new MdlException("DeviceResponse has no deviceSigned (holder binding absent)");
+
+            // DeviceNameSpacesBytes = the #6.24(bstr .cbor DeviceNameSpaces) as sent.
+            Object nsObj = deviceSigned.get("nameSpaces");
+            if (!(nsObj instanceof Cbor.Tag) || !(((Cbor.Tag) nsObj).v instanceof byte[]))
+                throw new MdlException("deviceSigned.nameSpaces is not a tag-24 bstr");
+            byte[] deviceNameSpacesBytes = Cbor.tag(24, Cbor.bstr((byte[]) ((Cbor.Tag) nsObj).v));
+
+            Map<Object, Object> deviceAuth = asMap(deviceSigned.get("deviceAuth"));
+            Object dsig = deviceAuth == null ? null : deviceAuth.get("deviceSignature");
+            if (dsig == null) {
+                // DeviceMac (ECDH-derived) is the other ISO option; this profile emits
+                // DeviceSignature. Fail closed rather than skip holder-binding.
+                throw new MdlException("deviceAuth has no DeviceSignature (DeviceMac not supported)");
+            }
+            List<Object> sign1 = (List<Object>) dsig;          // COSE_Sign1: [protected, unprotected, payload(nil), sig]
+            byte[] protectedHdr = (byte[]) sign1.get(0);
+            byte[] sigRS = (byte[]) sign1.get(3);
+
+            // DeviceAuthenticationBytes (detached payload). sessionTranscript is embedded
+            // verbatim as a pre-encoded CBOR item (array() just concatenates items).
+            byte[] deviceAuthentication = Cbor.array(
+                    Cbor.tstr("DeviceAuthentication"), sessionTranscript,
+                    Cbor.tstr(docType), deviceNameSpacesBytes);
+            byte[] deviceAuthBytes = Cbor.tag(24, Cbor.bstr(deviceAuthentication));
+
+            byte[] sigStruct = Cbor.array(
+                    Cbor.tstr("Signature1"), Cbor.bstr(protectedHdr),
+                    Cbor.bstr(new byte[0]), Cbor.bstr(deviceAuthBytes));
+            Signature v = Signature.getInstance("SHA256withECDSA", BC);
+            v.initVerify(d.deviceKey);
+            v.update(sigStruct);
+            if (!v.verify(rsToDer(sigRS))) throw new MdlException("DeviceSignature invalid — holder binding failed");
+        } catch (MdlException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new MdlException("deviceAuth parse/verify failed: " + e);
+        }
+    }
+
+    /** EC2 COSE_Key -> JCA PublicKey. Supports P-256 (crv=1), the only curve this
+     *  profile signs with (ES256). Keys: 1=kty(2=EC2), -1=crv, -2=x, -3=y. */
+    static PublicKey coseEcKey(Map<Object, Object> cose) {
+        try {
+            Object crv = cose.get(-1L);
+            if (!(crv instanceof Long) || (Long) crv != 1L) throw new MdlException("deviceKey curve not P-256");
+            byte[] x = (byte[]) cose.get(-2L);
+            byte[] y = (byte[]) cose.get(-3L);
+            java.security.AlgorithmParameters ap = java.security.AlgorithmParameters.getInstance("EC");
+            ap.init(new java.security.spec.ECGenParameterSpec("secp256r1"));
+            java.security.spec.ECParameterSpec sp = ap.getParameterSpec(java.security.spec.ECParameterSpec.class);
+            java.security.spec.ECPoint pt = new java.security.spec.ECPoint(new BigInteger(1, x), new BigInteger(1, y));
+            return java.security.KeyFactory.getInstance("EC")
+                    .generatePublic(new java.security.spec.ECPublicKeySpec(pt, sp));
+        } catch (MdlException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new MdlException("deviceKey parse failed: " + e);
+        }
     }
 
     static boolean verifies(X509Certificate c, PublicKey k) {
@@ -241,6 +332,13 @@ public final class Mdl {
             MdlData d = new MdlData();
             d.ds = ds;
             d.msoBytes = msoBytes;
+            // Issuer-bound device key (MSO deviceKeyInfo.deviceKey), if present. This is
+            // the holder-binding anchor verifyDeviceAuth checks the DeviceSignature against.
+            Object dki = mso.get("deviceKeyInfo");
+            if (dki instanceof Map) {
+                Object dk = ((Map<Object, Object>) dki).get("deviceKey");
+                if (dk instanceof Map) d.deviceKey = coseEcKey((Map<Object, Object>) dk);
+            }
             for (Object elem : (List<Object>) nameSpaces.get(NS)) {
                 // each elem is Tag(24, bstr(IssuerSignedItem)); re-encode to hash the exact bytes
                 byte[] itemBytes = (byte[]) ((Cbor.Tag) elem).v;
