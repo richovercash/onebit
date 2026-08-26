@@ -1,6 +1,6 @@
 event_id: PROV-20260718T022304-466
 timestamp: 2026-07-18T02:23:04.466Z
-actor_id: human:Rich Overcash <richovercash@pm.me>
+actor_id: human:Rich Overcash
 actor_type: human
 action: create
 artifact_refs:
