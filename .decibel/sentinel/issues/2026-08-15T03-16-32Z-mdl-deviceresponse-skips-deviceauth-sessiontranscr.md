@@ -1,23 +1,9 @@
----
 projectId: onebit
 severity: high
-status: open
+status: in_progress
 created_at: 2026-08-15T03:16:32.887Z
----
+description: |-
+  
 
-# mDL DeviceResponse skips deviceAuth / SessionTranscript holder-binding
-
-**Severity:** high
-**Status:** open
-
-## Details
-
-Source: multi-agent whole-repo review (2026-08-14), adversarially verified HIGH.
-
-Mdl.verifyDeviceResponse() (core/src/main/java/onebit/core/Mdl.java:76) extracts documents[0].issuerSigned and verifies ONLY the issuer COSE_Sign1 + DS->IACA chain + MSO value digests. The DeviceResponse's deviceSigned/deviceAuth (DeviceSignature or DeviceMac over the SessionTranscript, mandatory in ISO 18013-5 mdoc authentication) is never parsed or checked, and nothing binds the response to the OID4VP session nonce at this layer.
-
-Failure: an attacker who obtains a victim's previously-presented issuerSigned blob (identical across presentations) wraps it in a fresh DeviceResponse and enrolls the victim's document provenance (docHash + age bool) as their own OneBit credential via MdlSchemeActivity. Holder-binding is silently discarded.
-
-FIX IN PROGRESS this session (commit follows): verify DeviceSignature/DeviceMac over a reconstructed SessionTranscript in Mdl.verifyDeviceResponse, plumbing the OID4VP handover (clientId, responseUri, nonce, mdocGeneratedNonce/apu) from MdlSchemeActivity per the OID4VP OpenID4VPHandover / DC-API handover profile.
-
-Author already flagged this at MdlSchemeActivity.java ("passive auth only ... not the mdoc device signature (holder-binding/anti-replay)").
+  [2026-08-15] Java fix landed in b029c70: Mdl.verifyDeviceResponse(dr, anchor, sessionTranscript) verifies the DeviceSignature over a reconstructed ISO 18013-7 SessionTranscript; issuer-only path renamed verifyIssuerAuth (explicit no-holder-binding contract); MdlSchemeActivity (enrolling path) builds the OID4VPHandover transcript and fails closed without valid deviceAuth. 4 new MdlTest cases prove replay/missing-deviceAuth/tamper all reject (39 core tests green). REMAINING before done: one on-device pass against the CA DMV Wallet to confirm the SessionTranscript handover encoding (MdlSchemeActivity.oid4vpSessionTranscript) matches; if the wallet uses a different handover variant or DeviceMac, deviceAuth fails closed (safe) and that builder is the single spot to adjust.
+updated_at: 2026-08-15T03:24:26.576Z
