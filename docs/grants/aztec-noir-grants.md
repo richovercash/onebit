@@ -1,17 +1,25 @@
 # Aztec / Noir Grants application — ready to post
 
-**How to submit (verified 2026-08-25):**
-1. Airtable application form: https://airtable.com/shrvglCZ24jaH73oe (linked from
-   aztec.network grants blog; the old aztec.network/grants URL is 404).
-2. Then post the text below as a new topic in forum.aztec.network → **Applications**
-   (category 10), title as given. No tags needed. Official replies come by email,
-   not on the forum thread — don't post progress updates there.
-3. Notion overview: https://aztecnetwork.notion.site/aztecnetwork/Aztec-Grants-19896948e74b4024a458cdeddbe9574f
+**How to submit (verified 2026-08-25):** there is no open application form any more.
+The Airtable link from the 2024 blog is dead and the Notion page is the 2022 Aztec
+Connect program. Since late 2025 the Foundation funds via targeted **RFGPs** posted on
+the forum (Dark Forest $75k, State Migration $60k — each with its own deadline, tags,
+and "post your proposal as a new topic, link it in the RFGP thread" instructions) plus
+a Builder Grants bucket handled by email. Unsolicited forum applications in
+Applications (ZKCompliance Apr 2026, Audit Playbook Apr 2026) got zero replies.
 
-Format mirrors accepted applications in that category (e.g. ZKCompliance, Apr 2026):
-numbered sections, explicit milestone→dollar table, "what's already built" before
-"what the grant funds". Not a bridge/RFGP submission — those are separate,
-chain-side programs.
+So, three channels, do all three:
+1. **Email** the text below to hello@aztec.foundation and rahul@aztec-labs.com (the
+   named RFGP contact), subject = the title line. This is the one that gets read.
+2. **Post** it in forum.aztec.network → Applications (category 10) for visibility;
+   link the post in the email. Forum disclaimer: everything posted is public and
+   non-confidential, which is fine — it's all in the repo anyway.
+3. **Watch for an RFGP** on identity / selective disclosure / client-side proving
+   (search forum for "Request for Grant Proposals"); if one appears, resubmit in
+   that thread's required format with its tags. That is the funded path.
+
+Format below mirrors the RFGP-required sections (Title, Contact, Summary, Details,
+Milestones, Amount, Rationale) so it can be re-tagged into an RFGP without rewriting.
 
 ---
 
