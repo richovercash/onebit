@@ -3,11 +3,11 @@
 The roadmap's zero-cash audit path: apply to all three, take whichever lands
 first. Drafts here are LOCAL / uncommitted until submitted.
 
-| Program | What we ask | Mechanism | Status / next action |
-|---|---|---|---|
-| NLnet NGI Zero | ~€50k grant incl. security audit via their partner (Radically Open Security comes free with NLnet grants) | Web form at nlnet.nl/propose — **call reopens 2026-09-03, deadline 2026-11-03 12:00 CEST** | Draft ready (`nlnet-ngi-zero.md`). On Sep 3: confirm which fund is open (NGI Zero Core or successor), paste answers, submit. |
-| OTF Security Lab (ex Red Team Lab) | Audit-in-kind (no cash): circuit + wallet + verifier review | Rolling: apply via opentech.fund/labs/security-lab, or email security_lab@opentech.fund | Draft ready (`otf-security-lab.md`). Can send NOW. |
-| Aztec / Noir Grants | ~$20k for Noir-circuit audit + upstreaming the recursion/mobile-proving findings | Wave-based: post application to forum.aztec.network Applications category | Draft ready (`aztec-noir-grants.md`). Check current wave, post. |
+| Program                            | What we ask                                                                                               | Mechanism                                                                                  | Status / next action                                                                                                         |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| NLnet NGI Zero                     | ~€50k grant incl. security audit via their partner (Radically Open Security comes free with NLnet grants) | Web form at nlnet.nl/propose — **call reopens 2026-09-03, deadline 2026-11-03 12:00 CEST** | Draft ready (`nlnet-ngi-zero.md`). On Sep 3: confirm which fund is open (NGI Zero Core or successor), paste answers, submit. |
+| OTF Security Lab (ex Red Team Lab) | Audit-in-kind (no cash): circuit + wallet + verifier review                                               | Rolling: apply via opentech.fund/labs/security-lab, or email security_lab@opentech.fund    | **SUBMITTED 2026-08-25.** Form answers in `otf-security-lab.md`. Await vendor match (~4 months scoping→report).                                                                           |
+| Aztec / Noir Grants                | ~$20k for Noir-circuit audit + upstreaming the recursion/mobile-proving findings                          | Wave-based: post application to forum.aztec.network Applications category                  | Draft ready (`aztec-noir-grants.md`). Check current wave, post.                                                              |
 
 Shared facts used in all three (verified against repo 2026-08-02):
 
