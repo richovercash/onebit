@@ -52,6 +52,18 @@ pin-vkey / verify_proof / root-check) deleted. **26 ACIR opcodes.**
 
 ## What this closes, and what it trades
 
+> **Correction (2026-10 review): Tier A is not sound as deployed.** `C` is a
+> *private* witness that nothing public pins. A prover can invent
+> (dob, expiry, doc_hash, k, salt), compute a matching `C` and pass the rebind,
+> so neither provenance nor F2 is closed. The verifier did not tie the attested
+> key to an enrollment, an app, or a document. Both failure modes were reproduced
+> end to end through `VerifySdk.verify`. The verifier now **refuses**
+> `present_amortized` / `present_bool` unless the allowlist sets
+> `allow_tier_a_amortized: true` (demo only). Re-enabling it needs `C`, or an
+> enrollment token derived from it, bound to the presenting key, e.g. a verified
+> enrollment proof that outputs `C`. The paragraphs below are kept as the
+> original design note.
+
 **F2 (nullifier farming) — closed at the circuit level for Tier A.** The rebind
 ties the nullifier key `k` to the enrolled commitment `C`, so a given credential
 yields exactly one `k` → one `N` per (verifier, epoch). A wallet cannot present

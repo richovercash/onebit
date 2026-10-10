@@ -63,7 +63,7 @@ public final class MdlEnrollProbe {
         java.security.SecureRandom rnd = new java.security.SecureRandom();
         BigInteger k = new BigInteger(250, rnd), salt = new BigInteger(250, rnd);
 
-        String toml = "dob = " + d.dob + "\nexpiry = " + d.expiry
+        String toml = "dob = " + d.requireDob() + "\nexpiry = " + d.requireExpiry()
                 + "\ndoc_hash = \"0x" + docHash.toString(16) + "\"\nk = \"" + k + "\"\nsalt = \"" + salt + "\"\n";
         java.nio.file.Files.writeString(java.nio.file.Path.of(dir, "Prover.toml"), toml);
         // sidecar for the present_amortized step (decimal-friendly)

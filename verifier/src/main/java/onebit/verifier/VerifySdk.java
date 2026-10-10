@@ -60,7 +60,35 @@ public final class VerifySdk {
                 throw new IllegalStateException("policy requires a person-bound credential; this one is bearer-only");
             }
 
-            // 2. ZK proof (native). Two presentation circuits are accepted:
+            byte[] proofBytes = Base64.getDecoder().decode(r.get("proof").getAsString());
+
+            // 2. Attestation + device_sig first: cheap, and they gate the costly ZK
+            //    sidecar below. The attestation binds the first-contact nonce, not
+            //    this presentation's — freshness comes from device_sig.
+            List<X509Certificate> chain = new ArrayList<>();
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            for (var e : r.getAsJsonArray("attestation_chain")) {
+                chain.add((X509Certificate) cf.generateCertificate(
+                        new java.io.ByteArrayInputStream(Base64.getDecoder().decode(e.getAsString()))));
+            }
+            v.attestation = AttestationVerifier.verify(chain, null, allowlist);
+
+            // 3. device_sig = Sig(K_v, SHA256(nonce ‖ origin ‖ SHA256(proof))).
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            md.update(nonce);
+            md.update(c.origin.getBytes(StandardCharsets.UTF_8));
+            md.update(MessageDigest.getInstance("SHA-256").digest(proofBytes));
+            // Bind the assurance flag into the device-signed digest so a relay/MITM
+            // cannot flip an unsigned "person_bound":true past the policy gate above.
+            md.update((byte) (personBoundCred ? 1 : 0));
+            Signature s = Signature.getInstance("SHA256withECDSA");
+            s.initVerify(chain.get(0).getPublicKey());
+            s.update(md.digest());
+            if (!s.verify(Base64.getDecoder().decode(r.get("device_sig").getAsString()))) {
+                throw new IllegalStateException("device signature invalid");
+            }
+
+            // 4. ZK proof (native). Two presentation circuits are accepted:
             //  - mono_faithful: 5 pub [ctx,current,age_min,N,dsc_root] + a separate
             //    enroll proof -> full CSCA->DSC->SOD chain proven in ZK.
             //  - present_amortized (Tier A): 4 pub [ctx,current,age_min,N]. Document
@@ -78,12 +106,20 @@ public final class VerifySdk {
             java.util.Set<String> FAITHFUL = java.util.Set.of(
                     "mono_faithful", "mono_faithful_pss", "mono_faithful_ecdsa");
             if (!amortized && !FAITHFUL.contains(circuit)) {
-                throw new IllegalStateException("unknown presentation circuit: " + circuit);
+                throw new IllegalStateException("unknown presentation circuit");
+            }
+            // Tier A proofs carry no document provenance: the commitment C is a
+            // private witness nothing public pins, so anyone can prove a made-up
+            // (dob, k) and mint fresh nullifiers at will. Until enrollment is
+            // bound to the presenting key, accept them only on explicit opt-in.
+            if (amortized && !(allowlist.has("allow_tier_a_amortized")
+                    && allowlist.get("allow_tier_a_amortized").getAsBoolean())) {
+                throw new IllegalStateException(
+                        "amortized (Tier A) proofs not accepted: no document provenance (allow_tier_a_amortized=false)");
             }
             int pubCount = amortized ? 4 : 5;
             String circuitJson = circuit + ".json";
 
-            byte[] proofBytes = Base64.getDecoder().decode(r.get("proof").getAsString());
             String proofStr = new String(proofBytes, 0, Math.min(4, proofBytes.length), StandardCharsets.UTF_8);
             if (proofStr.startsWith("STUB")) {
                 boolean allowed = allowlist.has("demo_allow_zk_stub")
@@ -101,10 +137,18 @@ public final class VerifySdk {
                 if (!pub[0].equals(new java.math.BigInteger(expectedCtx))) {
                     throw new IllegalStateException("zk ctx != H(verifier_id||epoch)");
                 }
-                java.time.LocalDate today = java.time.LocalDate.now();
-                long todayInt = today.getYear() * 10000L + today.getMonthValue() * 100L + today.getDayOfMonth();
-                if (Math.abs(pub[1].longValueExact() - todayInt) > 1) {
-                    throw new IllegalStateException("zk current-date stale: " + pub[1]);
+                // Real date arithmetic (YYYYMMDD integers jump 70+ at month ends);
+                // ±1 day tolerates the holder's timezone.
+                int cur = pub[1].intValueExact();
+                java.time.LocalDate curDate;
+                try {
+                    curDate = java.time.LocalDate.of(cur / 10000, cur / 100 % 100, cur % 100);
+                } catch (java.time.DateTimeException e) {
+                    throw new IllegalStateException("zk current-date malformed");
+                }
+                long skew = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), curDate);
+                if (Math.abs(skew) > 1) {
+                    throw new IllegalStateException("zk current-date stale: " + cur);
                 }
                 if (pub[2].longValueExact() != c.value) {
                     throw new IllegalStateException("zk age_min != policy value");
@@ -136,7 +180,7 @@ public final class VerifySdk {
                                 ? r.get("enroll_alg").getAsString() : "rsa4096";
                         // Same alg->circuit map the wallet routes with (core).
                         String circuitName = onebit.core.Witness.CIRCUIT.get(eAlg);
-                        if (circuitName == null) throw new IllegalStateException("unknown enroll_alg: " + eAlg);
+                        if (circuitName == null) throw new IllegalStateException("unknown enroll_alg");
                         String eCircuit = circuitName + ".json";
                         // dsc_ecdsa is a P-256 DSC under an RSA-4096 CSCA -> rsa4096 tree/root.
                         String eRootKey = "csca_root_" + (eAlg.equals("dsc_ecdsa") ? "rsa4096" : eAlg);
@@ -170,33 +214,6 @@ public final class VerifySdk {
                     }
                 }
             }
-            byte[] proof = proofBytes;
-
-            // 3. Attestation chain to allowlist (attestation binds first-contact
-            //    nonce, not this presentation's — freshness comes from device_sig).
-            List<X509Certificate> chain = new ArrayList<>();
-            CertificateFactory cf = CertificateFactory.getInstance("X.509");
-            for (var e : r.getAsJsonArray("attestation_chain")) {
-                chain.add((X509Certificate) cf.generateCertificate(
-                        new java.io.ByteArrayInputStream(Base64.getDecoder().decode(e.getAsString()))));
-            }
-            v.attestation = AttestationVerifier.verify(chain, null, allowlist);
-
-            // 4. device_sig = Sig(K_v, SHA256(nonce ‖ origin ‖ SHA256(proof))).
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            md.update(nonce);
-            md.update(c.origin.getBytes(StandardCharsets.UTF_8));
-            md.update(MessageDigest.getInstance("SHA-256").digest(proof));
-            // Bind the assurance flag into the device-signed digest so a relay/MITM
-            // cannot flip an unsigned "person_bound":true past the policy gate above.
-            md.update((byte) (personBoundCred ? 1 : 0));
-            Signature s = Signature.getInstance("SHA256withECDSA");
-            s.initVerify(chain.get(0).getPublicKey());
-            s.update(md.digest());
-            if (!s.verify(Base64.getDecoder().decode(r.get("device_sig").getAsString()))) {
-                throw new IllegalStateException("device signature invalid");
-            }
-
             v.nullifier = pi.get("N").getAsString(); // stub value in pass 1
             v.ok = true;
         } catch (Exception e) {
@@ -208,6 +225,8 @@ public final class VerifySdk {
 
     /** Verify a native proof against `circuit`: split [uint32 num_public][pub]
      *  [proof], hand to the bb.js sidecar as {proof, publicInputs}. */
+    static final long ZK_TIMEOUT_S = Long.getLong("onebit.zk_timeout_s", 120);
+
     static boolean zkVerify(byte[] proofBytes, int pub, String circuit) throws Exception {
         int PRE = 4; // [uint32 num_public][pub][proof]
         com.google.gson.JsonArray publicInputs = new com.google.gson.JsonArray();
@@ -228,10 +247,21 @@ public final class VerifySdk {
                 .redirectErrorStream(true);
         pb.environment().put("CIRCUIT", circuit);
         Process p = pb.start();
-        p.getOutputStream().write(in.toString().getBytes(StandardCharsets.UTF_8));
-        p.getOutputStream().close();
-        String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        return p.waitFor() == 0 && out.contains("ZK_OK");
+        try {
+            p.getOutputStream().write(in.toString().getBytes(StandardCharsets.UTF_8));
+            p.getOutputStream().close();
+            // Drain on another thread so a hung sidecar can't block us past the timeout.
+            var out = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                try { return new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8); }
+                catch (java.io.IOException e) { return ""; }
+            });
+            if (!p.waitFor(ZK_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new IllegalStateException("ZK sidecar timed out");
+            }
+            return p.exitValue() == 0 && out.get(5, java.util.concurrent.TimeUnit.SECONDS).contains("ZK_OK");
+        } finally {
+            p.destroyForcibly();
+        }
     }
 
     private VerifySdk() {}

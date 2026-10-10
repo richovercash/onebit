@@ -34,6 +34,10 @@ fn main(
     // 1b. Bind dsc_modulus to the DSC pubkey inside the signed cert (else a real
     //     CSCA->DSC_A chain could commit an attacker's DSC_B). See enroll.nr.
     let mo = dsc_modulus_off;
+    // The 256-byte window must sit inside the CSCA-signed (hashed) TBS prefix;
+    // bytes past dsc_tbs_len are unhashed free witness.
+    assert(dsc_tbs_len <= 2048);
+    assert(mo + 256 <= dsc_tbs_len);
     for lb in 0..17 {
         let mut v: Field = 0;
         for b in 0..15 {

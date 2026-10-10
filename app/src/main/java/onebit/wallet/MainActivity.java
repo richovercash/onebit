@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
         sv.addView(col);
 
         TextView kick = tv("●  PASSPORT", ORANGE, 11, "sans-serif-medium", 0.14f);
-        kick.setOnLongClickListener(v -> {  // long-press reveals dev tools
+        if (isDebuggable()) kick.setOnLongClickListener(v -> {  // long-press reveals dev tools (debug builds)
             debugBox.setVisibility(debugBox.getVisibility() == android.view.View.GONE
                     ? android.view.View.VISIBLE : android.view.View.GONE);
             return true;
@@ -481,6 +481,9 @@ public class MainActivity extends Activity {
         try {
             java.io.File g1 = new java.io.File(getExternalFilesDir(null), "g1_big.dat");
             if (!g1.exists()) { say("Amortized enroll skipped (SRS missing)."); return; }
+            // present_bool never re-checks validity, so an expired passport must not
+            // enroll: the credential would outlive the document indefinitely.
+            if (!Mrz.notExpired(d.dateOfExpiry, t)) { say("Amortized enroll refused: document expired."); return; }
             java.time.LocalDate dob = Mrz.resolve(d.dateOfBirth, t);
             int dobI = dob.getYear() * 10000 + dob.getMonthValue() * 100 + dob.getDayOfMonth();
             int enrollDate = t.getYear() * 10000 + t.getMonthValue() * 100 + t.getDayOfMonth();
@@ -529,17 +532,21 @@ public class MainActivity extends Activity {
                     java.security.MessageDigest.getInstance("SHA-256").digest(d.msoBytes)).mod(P);
             java.math.BigInteger k = new java.math.BigInteger(250, new java.security.SecureRandom());
             java.math.BigInteger salt = new java.math.BigInteger(250, new java.security.SecureRandom());
-            String w = d.dob + "\n" + d.expiry + "\n" + docHash + "\n" + k + "\n" + salt;
+            int dob = d.requireDob(), expiry = d.requireExpiry();
+            String w = dob + "\n" + expiry + "\n" + docHash + "\n" + k + "\n" + salt;
             byte[] proof = NativeProver.prove(readAsset("zk/commit_fields.json"), w, g1.getAbsolutePath(), false);
             String c = pubField(proof, 0);
-            String blob = d.dob + "\n" + d.expiry + "\n" + docHash + "\n" + k + "\n" + salt + "\n" + c;
+            String blob = dob + "\n" + expiry + "\n" + docHash + "\n" + k + "\n" + salt + "\n" + c;
             Seal.writeFile(new java.io.File(getFilesDir(), "acred.bin").toPath(), blob.getBytes());
-            say("mDL ENROLLED (ISO 18013-5) — dob " + d.dob + ", expiry " + d.expiry
-                    + ". Presentations now ~0.8s (Tier A), unchanged circuit.");
+            say("mDL ENROLLED (ISO 18013-5). Presentations now ~0.8s (Tier A), unchanged circuit.");
         } catch (Throwable ex) {
             android.util.Log.w("ONEBIT_MDL", "mdl enroll: " + ex);
             say("mDL enroll failed: " + ex);
         }
+    }
+
+    private boolean isDebuggable() {
+        return (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     private byte[] readAssetBytes(String path) throws Exception {
@@ -573,22 +580,23 @@ public class MainActivity extends Activity {
         android.net.Uri u = intent == null ? null : intent.getData();
         if (u == null || !"onebit".equals(u.getScheme())) return;
         // Dev/demo entry points (benchp: heavy native proving; enrollmdl: inject the
-        // bundled test credential, overwriting acred.bin) must never be web-triggerable.
-        // A browser navigating to onebit:// adds CATEGORY_BROWSABLE; adb `am start` does
-        // not — so gate these on the absence of that category. Keeps the demo path
-        // working while blocking a malicious page from firing them silently.
-        boolean fromWeb = intent.hasCategory(android.content.Intent.CATEGORY_BROWSABLE);
+        // bundled test credential, overwriting acred.bin). Missing CATEGORY_BROWSABLE
+        // does NOT mean "adb": any installed app can send the same VIEW intent. So these
+        // exist only in debuggable builds (the test mdoc/IACA ship only in src/debug),
+        // and even there a browser can't fire them.
+        boolean refuseDev = intent.hasCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                || !isDebuggable();
         // P1.0 spike: adb-triggerable native recursion bench (no UI tap needed).
         //   adb shell am start -a android.intent.action.VIEW -d onebit://benchp
         // Read the result: adb logcat -s ONEBIT_NATIVE  ->  PROVE OK [recursion-775k]
         if ("benchp".equals(u.getHost())) {
-            if (fromWeb) { say("Dev deep link refused (browser)."); return; }
+            if (refuseDev) { say("Dev deep link refused."); return; }
             nativeProveTest("zk/circuit_p.json", "zk/wit_p.txt", "recursion-775k");
             return;
         }
         // Demo: enroll the bundled test mDL (Tier A). adb shell am start -d onebit://enrollmdl
         if ("enrollmdl".equals(u.getHost())) {
-            if (fromWeb) { say("Demo deep link refused (browser)."); return; }
+            if (refuseDev) { say("Demo deep link refused."); return; }
             new Thread(this::enrollMdl).start();
             return;
         }

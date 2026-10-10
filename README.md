@@ -26,6 +26,17 @@ See [`SPEC_one_bit_verifier.md`](SPEC_one_bit_verifier.md) for the protocol and
 [`ROADMAP_one_bit_verifier.md`](ROADMAP_one_bit_verifier.md) for status. Deeper notes
 live in [`docs/`](docs/).
 
+## For sites integrating the verifier
+
+OneBit answers exactly one question: *is this person over the threshold?* It
+deliberately does **not** tell you whether two accounts belong to the same
+person. Nullifiers are random per credential and rotate every epoch, so one adult
+can hold several accounts with you. That is the price of unlinkability, and it is
+not negotiable (ADR-006): a per-document identifier would let anyone who ever
+scanned the passport find the holder's accounts. Multi-account and resale
+control is your job, using your own signals (rate limits, payment, phone,
+behaviour).
+
 ## Modules
 
 | Module | What it is |

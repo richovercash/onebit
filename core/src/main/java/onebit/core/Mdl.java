@@ -33,6 +33,16 @@ public final class Mdl {
         public final Map<String, Object> elements = new java.util.LinkedHashMap<>(); // verified disclosed elements
         public int dob;          // YYYYMMDD (0 if birth_date not disclosed)
         public int expiry;       // YYYYMMDD (0 if expiry_date not disclosed)
+        /** dob for an age predicate. 0 means "not disclosed" and would pass every
+         *  `dob + age*10000 <= current` check, so never commit the raw field. */
+        public int requireDob() throws MdlException {
+            if (dob == 0) throw new MdlException("birth_date not disclosed");
+            return dob;
+        }
+        public int requireExpiry() throws MdlException {
+            if (expiry == 0) throw new MdlException("expiry_date not disclosed");
+            return expiry;
+        }
         public byte[] msoBytes;  // the MSO (COSE payload inner bstr) — doc-identity source
         public X509Certificate ds;
         /** Issuer-bound device public key from MSO deviceKeyInfo (null if absent).

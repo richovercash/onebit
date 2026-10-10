@@ -20,6 +20,9 @@ import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
@@ -52,12 +55,18 @@ public class AttestationVerifierTest {
      *  challenge, uniqueId, swEnforced, hwEnforced */
     static byte[] attExt(byte[] challenge, int patchLevel, boolean noAuth,
                          int bootState, boolean locked) throws Exception {
+        return attExt(challenge, patchLevel, noAuth, bootState, locked, 0, "onebit.wallet");
+    }
+
+    static byte[] attExt(byte[] challenge, int patchLevel, boolean noAuth, int bootState,
+                         boolean locked, int origin, String pkg) throws Exception {
         ASN1EncodableVector hw = new ASN1EncodableVector();
         hw.add(new DERTaggedObject(true, 1, new DERSet(new ASN1Integer(2)))); // purpose SIGN
         if (noAuth) hw.add(new DERTaggedObject(true, 503, DERNull.INSTANCE));
         hw.add(new DERTaggedObject(true, 704, new DERSequence(new ASN1Encodable[] {
                 new DEROctetString(BOOT_KEY), ASN1Boolean.getInstance(locked),
                 new ASN1Enumerated(bootState), new DEROctetString(new byte[32])})));
+        hw.add(new DERTaggedObject(true, 702, new ASN1Integer(origin)));     // GENERATED
         hw.add(new DERTaggedObject(true, 706, new ASN1Integer(patchLevel)));
         ASN1EncodableVector att = new ASN1EncodableVector();
         att.add(new ASN1Integer(300));           // attestationVersion
@@ -66,13 +75,26 @@ public class AttestationVerifierTest {
         att.add(new ASN1Enumerated(1));
         att.add(new DEROctetString(challenge));
         att.add(new DEROctetString(new byte[0]));
-        att.add(new DERSequence());              // softwareEnforced
+        ASN1EncodableVector sw = new ASN1EncodableVector();
+        if (pkg != null) {                       // attestationApplicationId
+            DERSequence info = new DERSequence(new ASN1Encodable[] {
+                    new DEROctetString(pkg.getBytes()), new ASN1Integer(1)});
+            DERSequence appId = new DERSequence(new ASN1Encodable[] {
+                    new DERSet(info), new DERSet(new DEROctetString(new byte[32]))});
+            sw.add(new DERTaggedObject(true, 709, new DEROctetString(appId.getEncoded())));
+        }
+        att.add(new DERSequence(sw));            // softwareEnforced
         att.add(new DERSequence(hw));
         return new DERSequence(att).getEncoded();
     }
 
     static X509Certificate cert(String issuer, String subject, KeyPair subj, KeyPair signer,
                                 byte[] ext) throws Exception {
+        return cert(issuer, subject, subj, signer, ext, issuer.equals(subject));
+    }
+
+    static X509Certificate cert(String issuer, String subject, KeyPair subj, KeyPair signer,
+                                byte[] ext, boolean ca) throws Exception {
         JcaX509v3CertificateBuilder b = new JcaX509v3CertificateBuilder(
                 new X500Name(issuer), BigInteger.valueOf(System.nanoTime()),
                 new Date(System.currentTimeMillis() - 86400_000L),
@@ -81,6 +103,11 @@ public class AttestationVerifierTest {
         if (ext != null) {
             b.addExtension(new ASN1ObjectIdentifier(AttestationVerifier.ATTESTATION_OID),
                     false, ext);
+        }
+        if (ca) {
+            b.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+            b.addExtension(Extension.keyUsage, true,
+                    new KeyUsage(KeyUsage.keyCertSign | KeyUsage.cRLSign));
         }
         return new JcaX509CertificateConverter().getCertificate(
                 b.build(new JcaContentSignerBuilder("SHA256withECDSA").build(signer.getPrivate())));
@@ -93,7 +120,8 @@ public class AttestationVerifierTest {
                 + "  {\"name\":\"stock-locked\",\"state\":\"Verified\"},"
                 + "  {\"name\":\"grapheneos\",\"state\":\"SelfSigned\","
                 + "   \"boot_key_sha256\":[\"" + "00".repeat(32) + "\"]}],"
-                + "\"min_patch_level\": 202501, \"require_user_auth\": true }";
+                + "\"min_patch_level\": 202501, \"require_user_auth\": true,"
+                + "\"attestation_apps\": [{\"package\":\"onebit.wallet\"}] }";
     }
 
     static List<X509Certificate> chain(byte[] ext) throws Exception {
@@ -163,5 +191,51 @@ public class AttestationVerifierTest {
                     NONCE, AttestationVerifier.readAllowlist(badList));
             fail("unknown root accepted");
         } catch (IllegalStateException expected) { }
+    }
+
+    static void assertRejected(List<X509Certificate> chain, String why) throws Exception {
+        try {
+            AttestationVerifier.verify(chain, NONCE, AttestationVerifier.readAllowlist(allowlistJson()));
+            fail(why + " accepted");
+        } catch (IllegalStateException | java.security.GeneralSecurityException expected) { }
+    }
+
+    /** The forged-leaf attack: an ordinary attested key (not a CA) signs a
+     *  fabricated leaf claiming StrongBox/Verified for a software key. */
+    @Test
+    public void leafSignedByNonCaAttestedKeyFails() throws Exception {
+        KeyPair kx = KeyPairGenerator.getInstance("EC").generateKeyPair();
+        X509Certificate kxCert = cert("CN=Fake Root", "CN=Kx", kx, rootKeys,
+                attExt(NONCE, 202606, false, 2, false), false);   // real but unlocked
+        X509Certificate forged = cert("CN=Kx", "CN=Forged", leafKeys, kx,
+                attExt(NONCE, 202612, false, 0, true));           // claims locked/Verified
+        assertRejected(List.of(forged, kxCert, root), "leaf under non-CA issuer");
+    }
+
+    @Test
+    public void attestationExtensionOnIntermediateFails() throws Exception {
+        KeyPair ik = KeyPairGenerator.getInstance("EC").generateKeyPair();
+        X509Certificate inter = cert("CN=Fake Root", "CN=Inter", ik, rootKeys,
+                attExt(NONCE, 202606, false, 0, true), true);
+        X509Certificate leaf = cert("CN=Inter", "CN=Leaf", leafKeys, ik,
+                attExt(NONCE, 202606, false, 0, true));
+        assertRejected(List.of(leaf, inter, root), "attestation ext on a CA");
+    }
+
+    @Test
+    public void caLeafFails() throws Exception {
+        assertRejected(List.of(cert("CN=Fake Root", "CN=Leaf", leafKeys, rootKeys,
+                attExt(NONCE, 202606, false, 0, true), true), root), "CA leaf");
+    }
+
+    @Test
+    public void importedKeyFails() throws Exception {
+        assertRejected(chain(attExt(NONCE, 202606, false, 0, true, 2, "onebit.wallet")), "IMPORTED key");
+    }
+
+    @Test
+    public void foreignAppKeyFails() throws Exception {
+        assertRejected(chain(attExt(NONCE, 202606, false, 0, true, 0, "com.evil.app")), "foreign app");
+        assertRejected(chain(attExt(NONCE, 202606, false, 0, true, 0, null)), "missing app id");
     }
 }

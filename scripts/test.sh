@@ -25,6 +25,15 @@ for c in mono_faithful enroll enroll_ecdsa present_amortized enroll_rsa6144 enro
       && echo "  ok: $c" ) || { echo "  FAIL: $c"; exit 1; }
 done
 
+echo "== Circuit negatives: data planted past the hashed prefix must be REFUSED =="
+# Fixtures from scripts/forge_tail.py: genuine signature, forged DG1 hash / DSC key
+# placed in array bytes sha256_var never hashes. A solve here is a soundness break.
+for c in mono_faithful enroll; do
+  ( cd "circuits/$c" && ! "$NARGO" execute -p Forged_tail _neg >/dev/null 2>&1 ) \
+    && echo "  ok: $c refuses tail forgery" \
+    || { echo "  FAIL: $c solved a tail forgery"; exit 1; }
+done
+
 echo "== Amortized presentation: real proof verifies via the verifier sidecar =="
 if command -v node >/dev/null 2>&1 && [ -f verifier/js/testdata/pa_proof.bin ]; then
   python3 scripts/split_proof.py verifier/js/testdata/pa_proof.bin 4 \

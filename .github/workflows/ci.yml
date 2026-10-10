@@ -23,3 +23,9 @@ jobs:
           for c in mono_faithful enroll enroll_ecdsa present_amortized enroll_rsa6144 enroll_p384 mono_faithful_ecdsa enroll_dsc_ecdsa mono_faithful_pss enroll_secp256 enroll_bp384 enroll_secp521 enroll_bp512 commit_fields; do
             (cd circuits/$c && nargo compile) || exit 1
           done
+
+      - name: Circuit negatives (tail forgeries must not solve)
+        run: |
+          for c in mono_faithful enroll; do
+            (cd circuits/$c && ! nargo execute -p Forged_tail _neg) || { echo "$c solved a tail forgery"; exit 1; }
+          done

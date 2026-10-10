@@ -24,6 +24,12 @@ Please **do not** open a public issue for security-sensitive reports.
 
 ## Out of scope
 
+- One genuine document holder opening several accounts at one verifier (e.g. by
+  running a modified prover that varies the nullifier key). This is accepted by
+  design: per-document nullifiers would let anyone who has read the chip link the
+  holder's accounts (ADR-006). Multi-account control is the verifier's job. A
+  report that this lets someone pass who is *not* over the threshold is in scope.
+
 - Attacks requiring a rooted/unlocked device the holder controls (the threat model
   assumes a trusted holder device; StrongBox/attestation is the anchor).
 - The bundled demo verifier's in-memory state (documented as non-persistent).

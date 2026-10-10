@@ -18,6 +18,7 @@ import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1TaggedObject;
 
 /**
@@ -29,7 +30,12 @@ public final class AttestationVerifier {
 
     static final String ATTESTATION_OID = "1.3.6.1.4.1.11129.2.1.17";
     // AuthorizationList tags (KeyMint schema)
+    static final int TAG_PURPOSE = 1;
     static final int TAG_NO_AUTH_REQUIRED = 503;
+    static final int TAG_ORIGIN = 702;
+    static final int TAG_ATTESTATION_APPLICATION_ID = 709;
+    static final int PURPOSE_SIGN = 2;
+    static final int ORIGIN_GENERATED = 0;
     static final int TAG_ROOT_OF_TRUST = 704;
     static final int TAG_OS_PATCH_LEVEL = 706;
 
@@ -41,6 +47,7 @@ public final class AttestationVerifier {
         public int securityLevel; // 1=TEE 2=StrongBox
         public String rootName;
         public String bootPolicyName;
+        public String appPackage;
 
         @Override
         public String toString() {
@@ -59,11 +66,30 @@ public final class AttestationVerifier {
         if (chain.size() < 2) throw new IllegalStateException("chain too short");
 
         // 1. Signature chain: each cert signed by its successor, root self-signed.
+        //    Every issuer must be a CA allowed to sign certs, and only the leaf may
+        //    carry the attestation extension: otherwise any ordinary attested key
+        //    could sign a forged "StrongBox / locked / Verified" leaf for a software
+        //    key and the forgery would chain to the real root.
         for (int i = 0; i < chain.size() - 1; i++) {
             chain.get(i).verify(chain.get(i + 1).getPublicKey());
         }
         X509Certificate root = chain.get(chain.size() - 1);
         root.verify(root.getPublicKey());
+        if (chain.get(0).getBasicConstraints() != -1) {
+            throw new IllegalStateException("attested leaf is a CA certificate");
+        }
+        for (int i = 0; i < chain.size(); i++) {
+            X509Certificate c = chain.get(i);
+            c.checkValidity();
+            if (i == 0) continue;
+            boolean[] ku = c.getKeyUsage();
+            if (c.getBasicConstraints() == -1 || ku == null || !ku[5]) {
+                throw new IllegalStateException("chain[" + i + "] is not a CA with keyCertSign");
+            }
+            if (c.getExtensionValue(ATTESTATION_OID) != null) {
+                throw new IllegalStateException("attestation extension on non-leaf chain[" + i + "]");
+            }
+        }
 
         // 2. Root SPKI must be allowlisted (V4).
         String rootSpki = sha256Hex(root.getPublicKey().getEncoded());
@@ -97,10 +123,19 @@ public final class AttestationVerifier {
         // 4. Hardware-enforced authorization list (last element).
         ASN1Sequence hwEnforced = ASN1Sequence.getInstance(att.getObjectAt(7));
         boolean noAuthRequired = false;
+        boolean canSign = false;
+        Integer origin = null;
         ASN1Sequence rootOfTrust = null;
         for (var el : hwEnforced) {
             ASN1TaggedObject t = ASN1TaggedObject.getInstance(el);
             switch (t.getTagNo()) {
+                case TAG_PURPOSE -> {
+                    for (var p : ASN1Set.getInstance(t.getExplicitBaseObject())) {
+                        canSign |= ASN1Integer.getInstance(p).intValueExact() == PURPOSE_SIGN;
+                    }
+                }
+                case TAG_ORIGIN ->
+                    origin = ASN1Integer.getInstance(t.getExplicitBaseObject()).intValueExact();
                 case TAG_NO_AUTH_REQUIRED -> noAuthRequired = true;
                 case TAG_ROOT_OF_TRUST -> rootOfTrust = ASN1Sequence.getInstance(t.getExplicitBaseObject());
                 case TAG_OS_PATCH_LEVEL ->
@@ -110,6 +145,11 @@ public final class AttestationVerifier {
         }
         r.userAuthRequired = !noAuthRequired;
         if (rootOfTrust == null) throw new IllegalStateException("no RootOfTrust in hw-enforced list");
+        // An IMPORTED key existed outside the secure hardware: attestation proves nothing.
+        if (origin == null || origin != ORIGIN_GENERATED) {
+            throw new IllegalStateException("key origin not GENERATED in hardware: " + origin);
+        }
+        if (!canSign) throw new IllegalStateException("attested key lacks SIGN purpose");
 
         byte[] bootKey = ASN1OctetString.getInstance(rootOfTrust.getObjectAt(0)).getOctets();
         boolean deviceLocked = ASN1Boolean.getInstance(rootOfTrust.getObjectAt(1)).isTrue();
@@ -150,7 +190,49 @@ public final class AttestationVerifier {
         if (allowlist.get("require_user_auth").getAsBoolean() && !r.userAuthRequired) {
             throw new IllegalStateException("key not auth-bound (noAuthRequired set)");
         }
+
+        // 7. Which app generated the key (softwareEnforced attestationApplicationId).
+        //    Without this, any app on a genuine device produces an acceptable key.
+        if (allowlist.has("attestation_apps")) {
+            checkApplicationId(ASN1Sequence.getInstance(att.getObjectAt(6)),
+                    allowlist.getAsJsonArray("attestation_apps"), r);
+        }
         return r;
+    }
+
+    /** AttestationApplicationId ::= SEQUENCE { packageInfos SET OF
+     *  AttestationPackageInfo { packageName OCTET STRING, version INTEGER },
+     *  signatureDigests SET OF OCTET STRING }. Every package sharing the key's
+     *  uid is listed; require exactly one, allowlisted, with a pinned signer
+     *  digest when the allowlist entry gives any. */
+    static void checkApplicationId(ASN1Sequence swEnforced, JsonArray apps, Result r) {
+        ASN1Sequence appId = null;
+        for (var el : swEnforced) {
+            ASN1TaggedObject t = ASN1TaggedObject.getInstance(el);
+            if (t.getTagNo() == TAG_ATTESTATION_APPLICATION_ID) {
+                appId = ASN1Sequence.getInstance(
+                        ASN1OctetString.getInstance(t.getExplicitBaseObject()).getOctets());
+            }
+        }
+        if (appId == null) throw new IllegalStateException("no attestationApplicationId");
+        ASN1Set pkgs = ASN1Set.getInstance(appId.getObjectAt(0));
+        if (pkgs.size() != 1) throw new IllegalStateException("key uid shared by " + pkgs.size() + " packages");
+        String pkg = new String(ASN1OctetString.getInstance(
+                ASN1Sequence.getInstance(pkgs.getObjectAt(0)).getObjectAt(0)).getOctets(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        java.util.Set<String> signers = new java.util.HashSet<>();
+        for (var d : ASN1Set.getInstance(appId.getObjectAt(1))) {
+            signers.add(HexFormat.of().formatHex(ASN1OctetString.getInstance(d).getOctets()));
+        }
+        for (var e : apps) {
+            JsonObject o = e.getAsJsonObject();
+            if (!o.get("package").getAsString().equals(pkg)) continue;
+            JsonArray pinned = o.has("signer_sha256") ? o.getAsJsonArray("signer_sha256") : new JsonArray();
+            boolean ok = pinned.isEmpty();
+            for (var s : pinned) ok |= signers.contains(s.getAsString().toLowerCase());
+            if (ok) { r.appPackage = pkg; return; }
+        }
+        throw new IllegalStateException("attesting app not allowlisted");
     }
 
     /** Verifies the device signature over the challenge with the attested key. */
