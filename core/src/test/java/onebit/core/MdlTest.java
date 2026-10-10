@@ -247,4 +247,13 @@ public class MdlTest {
         try { Mdl.verify(mdoc(false), List.of(stranger)); fail("accepted untrusted IACA"); }
         catch (Mdl.MdlException expected) { }
     }
+
+    /** dob=0 ("not disclosed") passes every age predicate; enrollment must refuse it. */
+    @Test public void undisclosedDobIsRefused() throws Exception {
+        Mdl.MdlData d = Mdl.verify(mdoc(false), List.of(iaca));
+        d.requireDob();                   // disclosed in the fixture
+        d.dob = 0;
+        try { d.requireDob(); fail("accepted an undisclosed birth_date"); }
+        catch (Mdl.MdlException expected) { }
+    }
 }

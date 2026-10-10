@@ -111,7 +111,14 @@ public class MdlEnrollActivity extends Activity {
     List<X509Certificate> trust() throws Exception {
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
         List<X509Certificate> t = new ArrayList<>();
-        for (String f : new String[]{"mdl/ca_iaca_prod.der", "mdl/ca_iaca_test.der"}) {
+        // The DMV UAT (test) root ships only in debug builds (src/mdlDebug): UAT
+        // mdocs carry tester-chosen attributes, so release trusts prod alone.
+        List<String> files = new ArrayList<>();
+        files.add("mdl/ca_iaca_prod.der");
+        if (java.util.Arrays.asList(getAssets().list("mdl")).contains("ca_iaca_test.der")) {
+            files.add("mdl/ca_iaca_test.der");
+        }
+        for (String f : files) {
             try (java.io.InputStream in = getAssets().open(f)) {
                 t.add((X509Certificate) cf.generateCertificate(in));
             }
