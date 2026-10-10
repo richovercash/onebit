@@ -10,6 +10,7 @@ import java.util.List;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -133,5 +134,28 @@ public class VerifySdkTest {
         var v = VerifySdk.verify(challenge(), modeB, allowlist(true));
         assertFalse(v.ok);
         assertTrue(v.reason.contains("mode B"));
+    }
+
+    /** Tier A proofs carry no document provenance: refused unless opted in. */
+    @Test
+    public void amortizedRejectedWithoutOptIn() throws Exception {
+        for (String c : new String[] {"present_amortized", "present_bool"}) {
+            JsonObject r = JsonParser.parseString(response(ORIGIN, ORIGIN)).getAsJsonObject();
+            r.addProperty("circuit", c);
+            var v = VerifySdk.verify(challenge(), r.toString(), allowlist(true));
+            assertFalse(c, v.ok);
+            assertTrue(v.reason, v.reason.contains("allow_tier_a_amortized"));
+        }
+    }
+
+    /** Attacker-chosen strings must not be echoed into the verdict reason. */
+    @Test
+    public void unknownCircuitReasonDoesNotEchoInput() throws Exception {
+        JsonObject r = JsonParser.parseString(response(ORIGIN, ORIGIN)).getAsJsonObject();
+        r.addProperty("circuit", "<script>alert(1)</script>");
+        var v = VerifySdk.verify(challenge(), r.toString(), allowlist(true));
+        assertFalse(v.ok);
+        assertFalse(v.reason, v.reason.contains("<script>"));
+        assertFalse(DemoServer.verdictPage(v, -1).contains("<script>"));
     }
 }
