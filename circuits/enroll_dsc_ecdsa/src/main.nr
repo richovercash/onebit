@@ -33,6 +33,10 @@ fn main(
     //     The uncompressed point sits contiguously (x||y) in the SPKI BIT STRING;
     //     direct byte comparison suffices (no limb reconstruction like RSA).
     let po = dsc_pubkey_off;
+    // The 64-byte point must sit inside the CSCA-signed (hashed) TBS prefix;
+    // bytes past dsc_tbs_len are unhashed free witness.
+    assert(dsc_tbs_len <= 2048);
+    assert(po + 64 <= dsc_tbs_len);
     for i in 0..32 { assert(dsc_tbs[po + i] == dsc_pubkey_x[i]); }
     for i in 0..32 { assert(dsc_tbs[po + 32 + i] == dsc_pubkey_y[i]); }
 

@@ -30,6 +30,14 @@ fn main(
     current: pub u32,
     age_min: pub u32,
 ) -> pub (Field, Field) { // (N, dsc_commit)
+    // 0. Offsets must lie inside the HASHED prefix. sha256_var zero-substitutes
+    //    bytes at index >= *_len, so the array tail is free witness: an offset
+    //    into it would let the prover plant any hash past the signed bytes.
+    assert(econtent_len <= 256);
+    assert(signed_attrs_len <= 128);
+    assert(dg1_hash_off + 32 <= econtent_len);
+    assert(econtent_hash_off + 32 <= signed_attrs_len);
+
     // 1. SHA256(DG1) in the LDS security object
     let h_dg1 = digest(dg1);
     for i in 0..32 {

@@ -28,6 +28,26 @@ Applied to both `enroll` and `enroll_ecdsa`. Negative test: tampering
 `dsc_modulus` fails the constraint. Cost: ~small (256 byte reads); enroll
 212k→~213k, enroll_ecdsa 249k→256k gates.
 
+### F3 — CRITICAL (FIXED 2026-10): witness offsets could point past the hashed prefix
+
+The F1 fix and the "offsets bound by the hash→signature chain" spot check below
+both missed that `sha256_var(arr, len)` hashes only `arr[0..len)`. The bytes of a
+fixed-size array at index ≥ `len` are **free witness**, and no circuit required
+an offset window to end before `len`.
+
+**Exploits (both reproduced with nargo against the pre-fix circuits):**
+- `mono_faithful*`: keep the genuine `signed_attrs`, signature and `econtent`
+  prefix; rewrite DG1 (any DOB) and write `SHA256(forged DG1)` into the unhashed
+  `econtent` tail with `dg1_hash_off = econtent_len`. Every assert passes.
+  The same trick on `econtent_hash_off` decouples `econtent` from the signature.
+- `enroll*`: move `dsc_modulus_off` / `dsc_pubkey_off` into the unhashed
+  `dsc_tbs` tail and place any key there. This re-opens F1 completely.
+
+**Fix:** `assert(*_len <= N)` and `assert(off + width <= *_len)` for every offset
+(`mono_faithful`, `_pss`, `_ecdsa`, and all nine `enroll*` circuits). Regression
+fixtures: `circuits/{mono_faithful,enroll}/Forged_tail.toml` (built by
+`scripts/forge_tail.py`) must NOT solve; `scripts/test.sh` and CI check this.
+
 ### F2 — MEDIUM: nullifier key `k` is unconstrained in `mono_faithful`
 
 `N = Poseidon2([k, ctx])` with `k` a free witness. Nothing ties `k` to the
@@ -71,12 +91,13 @@ noted as the upgrade path in `Seal.java`.
 ## Verified-sound (spot checks that passed)
 
 - **Offsets/lengths as witnesses** (`dg1_hash_off`, `econtent_hash_off`,
-  `econtent_len`, `signed_attrs_len`): all bound by the hash→signature chain.
-  A wrong length/offset changes a hash → breaks the RSA verify → fails closed.
-  Out-of-bounds indices fail proving (Noir constrains array access).
+  `econtent_len`, `signed_attrs_len`): ~~all bound by the hash→signature chain~~
+  **WRONG as originally written. See F3.** A wrong *length* changes a hash and
+  fails closed, but an offset into the unhashed tail did not until F3 added
+  `off + width <= len`. Out-of-array indices still fail proving.
 - **Merkle membership** (`enroll`): reaching the published root from a fake
   leaf/path requires a Poseidon2 collision. `csca_modulus` used both in the sig
   verify and the leaf, so the CSCA that signed the DSC is the one in the tree.
 - **dsc_commit linkage**: `mono_faithful` and `enroll` both commit
   `Poseidon2(dsc_modulus)`; verifier asserts equality → binds the two proofs to
-  the same DSC. With F1 fixed, that DSC is provably CSCA-signed.
+  the same DSC. With F1 **and F3** fixed, that DSC is provably CSCA-signed.
