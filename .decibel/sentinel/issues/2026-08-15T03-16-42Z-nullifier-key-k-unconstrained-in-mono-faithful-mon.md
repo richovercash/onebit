@@ -1,14 +1,14 @@
 ---
 projectId: onebit
 severity: high
-status: open
+status: closed
 created_at: 2026-08-15T03:16:42.915Z
 ---
 
 # Nullifier key k unconstrained in mono_faithful / mono_slim (soundness)
 
 **Severity:** high
-**Status:** open
+**Status:** closed (accepted by design, ADR-006)
 
 ## Details
 
@@ -21,3 +21,12 @@ Failure: one holder of a single valid credential can enumerate arbitrary k value
 FIX (deferred — needs circuit rework + re-proving + SRS): bind k in-circuit to the credential commitment C (assert C == commit(...k...)), matching present_amortized. Both live presentation circuits (mono_slim = P0, mono_faithful = faithful rail) must be updated and re-verified end to end. Tracked separately from the Java fixes because it is a soundness change, not a patch.
 
 Related: SPEC §4.1 ("Circuit proves consistency of k with C").
+
+## Resolution (2026-10-10)
+
+Closed as accepted by design (ADR-006). The proposed FIX (bind k to C) does not
+close the gap: k is freshly sampled at enrollment, so a holder can re-enroll for
+a new k. Only a document-derived k gives per-document uniqueness, and any
+chip-reader could recompute it to link the holder's accounts, which breaks V2.
+The project rejects that even as an opt-in. Multi-account control is the
+verifier's responsibility (SPEC §7, SECURITY.md out of scope).

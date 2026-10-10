@@ -48,7 +48,14 @@ an offset window to end before `len`.
 fixtures: `circuits/{mono_faithful,enroll}/Forged_tail.toml` (built by
 `scripts/forge_tail.py`) must NOT solve; `scripts/test.sh` and CI check this.
 
-### F2 — MEDIUM: nullifier key `k` is unconstrained in `mono_faithful`
+### F2 — MEDIUM (ACCEPTED BY DESIGN, ADR-006): nullifier key `k` is unconstrained in `mono_faithful`
+
+> **Resolution (2026-10):** accepted, not deferred. Mitigation (b) below does
+> not close F2: `k` is freshly sampled at enrollment, so binding it to `C`
+> still lets a holder re-enroll for a new `k`. The only in-circuit fix is a
+> document-derived `k`, which any chip-reader could recompute to link the
+> holder's accounts. That breaks V2, so it is rejected outright, including as
+> an opt-in. Multi-account control is the verifier's responsibility (SPEC §7).
 
 `N = Poseidon2([k, ctx])` with `k` a free witness. Nothing ties `k` to the
 document, so a prover can pick a different `k` per presentation → unlimited

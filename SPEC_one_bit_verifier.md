@@ -17,7 +17,7 @@ These are permanent. Any change requires an ADR and is presumed wrong.
 
 - **V0 — One bit.** A conforming verifier learns only: predicate satisfied (yes/no), a verifier-scoped nullifier, and protocol metadata. The wire format MUST NOT be able to express attribute disclosure (no "send DOB" message exists).
 - **V1 — No third party at presentation time.** Verification is a local computation against public parameters. No network call to any issuer, platform, or policy server is required or permitted by the protocol.
-- **V2 — Unlinkability.** No value transmitted at presentation is reused across verifiers. Cross-verifier correlation MUST be bounded by the declared anonymity tier (§7.3). Within one verifier, correlation is bounded to one epoch via the nullifier.
+- **V2 — Unlinkability.** No value transmitted at presentation is reused across verifiers. Cross-verifier correlation MUST be bounded by the declared anonymity tier (§7.3). Within one verifier, correlation is bounded to one epoch via the nullifier. No transmitted value may be derivable from document data. This holds unconditionally: no verifier policy, flag or "opt-in" can request a document-derived nullifier (ADR-006).
 - **V3 — Nothing to breach.** Verifier-side security MUST NOT depend on retained data. A conforming verifier that stores nothing is fully secure; retention is never required.
 - **V4 — Open attestation roots.** Device-integrity trust is a published allowlist of verified-boot / attestation root keys controlled by the verifier (or a conformance body), never a call to a platform policy service (Play Integrity, etc.). GrapheneOS AVB keys ship in the reference allowlist.
 - **V5 — Predicate-only grammar.** The policy language expresses boolean predicates over committed attributes. Extending the grammar to raw attribute release is a protocol violation, not a configuration.
@@ -63,7 +63,7 @@ One-time ceremony with an issuer that verifies a document and blind-signs (BBS+)
 
 ### 4.1 Commitment & nullifier
 - Commitment: Poseidon over the proving field. `C` is never transmitted, never published. No registry exists (a registry is an observer; rejected by ADR-002).
-- Nullifier: `N = Poseidon(k, H(verifier_id ‖ epoch))`. Circuit proves consistency of `k` with `C`. Epoch length is verifier policy (default 24h); shorter epochs weaken rate-limiting, longer epochs increase same-verifier trackability. Cross-verifier: `N` values are computationally uncorrelatable.
+- Nullifier: `N = Poseidon(k, H(verifier_id ‖ epoch))`. Circuit proves consistency of `k` with `C`. **This does not make `N` unique per document**: `k` is random by design (ADR-006), so a holder with a modified prover, or one who re-enrolls, can present with a different `k`. `N` rate-limits an honest wallet; it is not Sybil resistance. Multi-account control is the verifier's job. Epoch length is verifier policy (default 24h); shorter epochs weaken rate-limiting, longer epochs increase same-verifier trackability. Cross-verifier: `N` values are computationally uncorrelatable.
 
 ### 4.2 Circuits
 
@@ -171,7 +171,8 @@ Stateless. No PII path exists.
 |---|---|---|
 | Borrowed device (minor uses adult's phone) | Class-3 biometric/credential gating every key use | Coerced/consenting adult unlock — parity with physical-world checks; out of scope |
 | Credential extraction/resale | Secrets SE-wrapped, non-exportable; proof requires live `K_v` signature | SE compromise (hardware attack) — accepted |
-| Proof farm (one adult proves for many) | Per-verifier-epoch nullifier rate limit; hardware attestation prevents emulated fleets | Farm of real devices w/ real documents — costly; monitor |
+| Proof farm (one adult proves for many) | Per-verifier-epoch nullifier rate limit; hardware attestation prevents emulated fleets | Farm of real devices w/ real documents — costly; monitor. A modified prover can vary `k` (ADR-006) |
+| Multi-account use by one genuine holder | **Verifier's responsibility** (account rate limits, payment/phone, behaviour). The nullifier only slows an honest wallet | Accepted by design: a document-derived nullifier would let any chip-reader link the holder's accounts (ADR-006) |
 | Proof replay / phishing relay | nonce+origin as public inputs; device_sig | — |
 | Cross-verifier tracking | Fresh `K_v`, batch certs (Tier A) or in-circuit attestation (Tier B); per-verifier nullifiers | Tier A: batch-level correlation (declared) |
 | Same-verifier tracking | Nullifier scoped to epoch | Within-epoch linkage (by design, for rate limiting) |
@@ -216,4 +217,5 @@ Stateless. No PII path exists.
 ## ADR index
 - ADR-001: No registry of commitments (registries are observers). 
 - ADR-002: Raw key attestation only; policy-server calls prohibited (V1/V4).
+- ADR-006: Unlinkability over Sybil resistance. `k` stays random and SE-sealed; no document-derived nullifier, not even opt-in. Multi-account control belongs to verifiers.
 - ADR-003: Proving architecture — DECIDED (2026-07): two-circuit split, both non-recursive. `enroll` proves CSCA→DSC + master-list Merkle membership once at enrollment (~10 s on-device); `mono_faithful` proves DSC→SOD passive auth + predicate + nullifier per presentation (~2.5–4.5 s native), chained by a shared `dsc_commit` public output. Recursion (Circuit P v1, π_E verified in-circuit) was built, proven sound, and measured at 20.3 s/presentation on Pixel 9a — the in-circuit Honk verifier (775k gates) costs more than redoing the single RSA check (177k), so it is reserved for multi-credential aggregation and the V2 full-unlinkability upgrade (dsc_commit reveals DSC batch). Tier A sub-second path: `present_amortized` (attested enrollment, rebind + predicate only, ~0.8 s). Evidence: docs/measurement-recursion-on-device.md, docs/architecture-proving-revisit.md, docs/amortized-enrollment.md.
