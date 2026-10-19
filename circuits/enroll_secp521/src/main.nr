@@ -35,6 +35,10 @@ fn main(
 
     // 1b. Bind dsc_modulus (RSA-2048 DSC) to the pubkey inside the signed cert.
     let mo = dsc_modulus_off;
+    // The 256-byte window must sit inside the CSCA-signed (hashed) TBS prefix;
+    // bytes past dsc_tbs_len are unhashed free witness.
+    assert(dsc_tbs_len <= 2048);
+    assert(mo + 256 <= dsc_tbs_len);
     for lb in 0..17 {
         let mut v: Field = 0;
         for b in 0..15 {

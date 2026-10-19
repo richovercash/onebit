@@ -11,7 +11,6 @@ import java.security.KeyPair;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.Signature;
-import java.time.LocalDate;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
@@ -33,6 +32,12 @@ public final class DemoServer {
     /** per-epoch nullifier counts; in-memory only (V3). */
     static final Map<String, Integer> nullifierLedger = new ConcurrentHashMap<>();
     static final int EPOCH_RATE_LIMIT = 3;
+    /** Unanswered challenges expire, and the pending set is capped, so a flood
+     *  of GETs can't grow memory without bound. */
+    static final long NONCE_TTL_MS = 10 * 60_000L;
+    static final int MAX_PENDING = 10_000;
+    /** The ledger only matters within an epoch (N rotates with it): reset on rollover. */
+    static volatile String ledgerEpoch = "";
     static KeyPair verifierKey;
     static String verifierId;
     static JsonObject allowlist;
@@ -48,7 +53,11 @@ public final class DemoServer {
         verifierId = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(verifierKey.getPublic().getEncoded()));
 
-        HttpServer s = HttpServer.create(new InetSocketAddress(8317), 0);
+        // Loopback by default: the demo is reached via `adb reverse`. Expose it
+        // deliberately with -Donebit.bind=0.0.0.0.
+        String bind = System.getProperty("onebit.bind", "127.0.0.1");
+        HttpServer s = HttpServer.create(new InetSocketAddress(bind, 8317), 0);
+        s.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4));
         s.createContext("/", ex -> {
             String challenge = mintChallenge();
             String link = "onebit://present?c=" + Base64.getUrlEncoder().withoutPadding()
@@ -59,14 +68,26 @@ public final class DemoServer {
             String q = ex.getRequestURI().getRawQuery();
             String verdictHtml;
             try {
+                if (q == null || !q.startsWith("r=") || q.length() > 256 * 1024) {
+                    throw new IllegalStateException("missing or oversized response");
+                }
                 String resp = new String(Base64.getUrlDecoder().decode(q.substring(2)), StandardCharsets.UTF_8);
                 String nonceB64 = com.google.gson.JsonParser.parseString(resp).getAsJsonObject()
                         .getAsJsonObject("public_inputs").get("nonce").getAsString();
                 String challenge = pendingNonces.remove(nonceB64); // single-use
                 if (challenge == null) throw new IllegalStateException("unknown or replayed nonce");
                 Long minted = nonceMintedAt.remove(nonceB64);
+                if (minted == null || System.currentTimeMillis() - minted > NONCE_TTL_MS) {
+                    throw new IllegalStateException("challenge expired");
+                }
                 VerifySdk.Verdict v = VerifySdk.verify(challenge, resp, allowlist);
                 if (v.ok && !v.nullifier.isEmpty()) {
+                    String epoch = currentEpoch();
+                    if (!epoch.equals(ledgerEpoch)) {
+                        synchronized (nullifierLedger) {
+                            if (!epoch.equals(ledgerEpoch)) { nullifierLedger.clear(); ledgerEpoch = epoch; }
+                        }
+                    }
                     int n = nullifierLedger.merge(v.nullifier, 1, Integer::sum);
                     if (n > EPOCH_RATE_LIMIT) {
                         v.ok = false;
@@ -112,7 +133,7 @@ public final class DemoServer {
             // Hourly-rotating epoch (YYYY-MM-DD-HH): the disclosed token changes every
             // hour, so nothing persistent leaves the device — while still letting us
             // rate-limit within the hour.
-            String epoch = LocalDate.now() + "-" + String.format("%02d", java.time.LocalTime.now().getHour());
+            String epoch = currentEpoch();
             c.addProperty("epoch", epoch);
             c.add("policy", policy);
             // Sign the canonical tuple (shared with the wallet), not the JSON text,
@@ -125,12 +146,41 @@ public final class DemoServer {
             c.addProperty("sig", Base64.getEncoder().encodeToString(sig.sign()));
             c.addProperty("spki", Base64.getEncoder().encodeToString(verifierKey.getPublic().getEncoded()));
             String json = c.toString();
+            long now = System.currentTimeMillis();
+            nonceMintedAt.entrySet().removeIf(e -> {
+                boolean stale = now - e.getValue() > NONCE_TTL_MS;
+                if (stale) pendingNonces.remove(e.getKey());
+                return stale;
+            });
+            if (pendingNonces.size() >= MAX_PENDING) throw new IllegalStateException("too many pending challenges");
             pendingNonces.put(nonceB64, json);
             nonceMintedAt.put(nonceB64, System.currentTimeMillis());
             return json;
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    static String currentEpoch() {
+        java.time.LocalDateTime t = java.time.LocalDateTime.now();
+        return t.toLocalDate() + "-" + String.format("%02d", t.getHour());
+    }
+
+    /** HTML-escape everything that came from (or echoes) the wallet's response. */
+    static String esc(Object o) {
+        String in = String.valueOf(o);
+        StringBuilder b = new StringBuilder(in.length());
+        for (char ch : in.toCharArray()) {
+            switch (ch) {
+                case '<' -> b.append("&lt;");
+                case '>' -> b.append("&gt;");
+                case '&' -> b.append("&amp;");
+                case '"' -> b.append("&quot;");
+                case '\'' -> b.append("&#39;");
+                default -> b.append(ch);
+            }
+        }
+        return b.toString();
     }
 
     static String gatePage(String deepLink) {
@@ -174,7 +224,7 @@ public final class DemoServer {
      *  Saying "CSCA->DSC->SOD proven in ZK" for an mDL presentation would overclaim twice:
      *  wrong chain, and wrong place. */
     static String bindingLine(VerifySdk.Verdict v) {
-        switch (v.circuit) {
+        switch (String.valueOf(v.circuit)) {
             case "present_bool":
                 return "Binding: mobile ID (IACA&rarr;DS&rarr;MSO verified at enrolment, attested).";
             case "present_amortized":
@@ -194,20 +244,23 @@ public final class DemoServer {
             return "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
                 + "<body style='font-family:sans-serif;max-width:40em;margin:2em auto;padding:0 1em'>"
                 + "<h1 style='color:#188038'>ACCESS GRANTED &#127866;</h1>" + stub
-                + (v.chain.isEmpty() ? "" : "<p style='background:#e6f4ea;padding:.5em;border-radius:6px'>&#128279; chain: " + v.chain + "</p>")
+                + (v.chain.isEmpty() ? "" : "<p style='background:#e6f4ea;padding:.5em;border-radius:6px'>&#128279; chain: " + esc(v.chain) + "</p>")
                 + (e2eMs >= 0 ? "<p>challenge&rarr;verdict: <b>" + e2eMs + " ms</b></p>" : "")
                 + "<pre style='background:#f1f3f4;padding:1em;border-radius:6px;white-space:pre-wrap'>"
-                + v.attestation + "</pre>"
-                + "<p>nullifier: <code style='word-break:break-all'>" + v.nullifier + "</code></p>";
+                + esc(v.attestation) + "</pre>"
+                + "<p>nullifier: <code style='word-break:break-all'>" + esc(v.nullifier) + "</code></p>";
         }
         return "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
             + "<body style='font-family:sans-serif;max-width:40em;margin:2em auto;padding:0 1em'>"
-            + "<h1 style='color:#d93025'>ACCESS DENIED</h1><p>fail closed: " + v.reason + "</p>";
+            + "<h1 style='color:#d93025'>ACCESS DENIED</h1><p>fail closed: " + esc(v.reason) + "</p>";
     }
 
     static void respond(com.sun.net.httpserver.HttpExchange ex, int code, String html) throws java.io.IOException {
         byte[] b = html.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
+        // No scripts anywhere on these pages; inline styles only.
+        ex.getResponseHeaders().set("Content-Security-Policy",
+                "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'");
         ex.sendResponseHeaders(code, b.length);
         ex.getResponseBody().write(b);
         ex.close();

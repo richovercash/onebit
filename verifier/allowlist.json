@@ -26,6 +26,11 @@
   "min_patch_level": 202501,
   "require_user_auth": true,
   "demo_allow_zk_stub": false,
+  "allow_tier_a_amortized": false,
+  "attestation_apps": [
+    { "package": "onebit.wallet", "signer_sha256": [] },
+    { "package": "onebit.wallet.mdl", "signer_sha256": [] }
+  ],
   "csca_root_rsa4096": "0x26e9eb1ffb2b852974b8e922d8139420905fe31a4bb8086944d47c5115096e70",
   "csca_root_rsa6144": "0x2243af1d315c930dc403713a9eefae1b3ae9b0200f8f821b952ec761f176734f",
   "csca_root_brainpool256": "0x248b74817b1e58b64715157e49856979a700b8b0a8b13c2c7e02bfea96906a22",
